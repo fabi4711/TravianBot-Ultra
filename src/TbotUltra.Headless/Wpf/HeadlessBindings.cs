@@ -283,6 +283,11 @@ public static class HeadlessBindings
                 return;
             }
 
+            if (IsApplying)
+            {
+                return;
+            }
+
             Detach();
             object? value;
             var resolved = true;
@@ -365,6 +370,11 @@ public static class HeadlessBindings
 
         private void SetTarget(DependencyObject target, object? value)
         {
+            if (Equals(HeadlessXaml.TryGetProperty(target, _property), value))
+            {
+                return;
+            }
+
             IsApplying = true;
             try
             {
@@ -393,7 +403,15 @@ public static class HeadlessBindings
             {
                 if (current is INotifyPropertyChanged observable)
                 {
-                    PropertyChangedEventHandler handler = (_, _) => Dispatch(Apply);
+                    var segment = segments[i];
+                    PropertyChangedEventHandler handler = (_, e) =>
+                    {
+                        if (string.IsNullOrEmpty(e.PropertyName) || e.PropertyName == segment ||
+                            segment.StartsWith('[') || (segment.StartsWith('(') && segment.EndsWith(e.PropertyName + ")", StringComparison.Ordinal)))
+                        {
+                            Dispatch(Apply);
+                        }
+                    };
                     observable.PropertyChanged += handler;
                     _subscriptions.Add((observable, handler));
                 }
@@ -449,7 +467,7 @@ public static class HeadlessBindings
                         return target;
                     case RelativeSourceMode.FindAncestor:
                         var level = 0;
-                        for (var current = (target as UIElement)?.HeadlessParent; current is not null; current = (current as UIElement)?.HeadlessParent)
+                        for (var current = HeadlessXaml.GetParent(target); current is not null; current = HeadlessXaml.GetParent(current))
                         {
                             if (relative.AncestorType?.IsInstanceOfType(current) == true && ++level >= Math.Max(1, relative.AncestorLevel))
                             {
@@ -465,18 +483,13 @@ public static class HeadlessBindings
                 }
             }
 
-            if (target is FrameworkElement framework)
-            {
-                // A binding on DataContext itself reads the parent's context, as in WPF.
-                var context = _property == nameof(FrameworkElement.DataContext)
-                    ? (framework.HeadlessParent as FrameworkElement)?.DataContext
-                    : framework.DataContext;
-                resolved = context is not null;
-                return context;
-            }
-
-            resolved = false;
-            return null;
+            // A binding on DataContext itself reads the parent's context, as in WPF; objects outside the
+            // element tree (resources, columns) use their inheritance context.
+            var context = target is FrameworkElement framework && _property != nameof(FrameworkElement.DataContext)
+                ? framework.DataContext
+                : HeadlessXaml.InheritedDataContext(HeadlessXaml.GetParent(target));
+            resolved = context is not null;
+            return context;
         }
     }
 }

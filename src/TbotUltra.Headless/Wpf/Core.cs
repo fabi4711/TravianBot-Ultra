@@ -988,7 +988,11 @@ public class ResourceDictionary : IEnumerable
 
     public void Remove(object key) => _resources.Remove(key);
 
-    public IEnumerator GetEnumerator() => _resources.GetEnumerator();
+    public ICollection Values => _resources.Values;
+
+    // WPF enumerates resources as DictionaryEntry, like IDictionary.
+    public IEnumerator GetEnumerator()
+        => _resources.Select(pair => new DictionaryEntry(pair.Key, pair.Value)).ToList().GetEnumerator();
 }
 
 public class Style

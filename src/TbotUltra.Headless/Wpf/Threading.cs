@@ -51,7 +51,7 @@ public sealed class DispatcherUnhandledExceptionEventArgs : EventArgs
 /// </summary>
 public sealed class Dispatcher
 {
-    private static Dispatcher? _main;
+    private static readonly Lazy<Dispatcher> MainInstance = new(() => new Dispatcher("Headless UI"), LazyThreadSafetyMode.ExecutionAndPublication);
     private readonly BlockingCollection<WorkItem> _queue = new();
     private readonly Thread _thread;
 
@@ -62,7 +62,7 @@ public sealed class Dispatcher
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(this));
             started.Set();
-            PushFrame(new DispatcherFrame(exitWhenRequested: false));
+            RunFrame(new DispatcherFrame(exitWhenRequested: false));
         })
         {
             IsBackground = true,
@@ -73,7 +73,7 @@ public sealed class Dispatcher
     }
 
     /// <summary>The headless UI dispatcher. Created on first use.</summary>
-    public static Dispatcher Main => LazyInitializer.EnsureInitialized(ref _main, () => new Dispatcher("Headless UI"));
+    public static Dispatcher Main => MainInstance.Value;
 
     /// <summary>WPF returns the calling thread's dispatcher; the headless host has exactly one.</summary>
     public static Dispatcher CurrentDispatcher => Main;

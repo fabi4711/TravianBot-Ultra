@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TbotUltra.Web</AssemblyName>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Using Remove="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TbotUltra.Headless\TbotUltra.Headless.csproj" />
+  </ItemGroup>
+</Project>

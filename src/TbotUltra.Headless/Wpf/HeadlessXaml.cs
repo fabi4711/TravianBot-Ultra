@@ -27,6 +27,7 @@ public sealed class HeadlessComponent
     public Dictionary<string, object> Named { get; } = new(StringComparer.Ordinal);
     public Dictionary<object, string> Ids { get; } = new(ReferenceEqualityComparer.Instance);
     internal List<(Style Style, string EventName, HeadlessHandler Handler)> StyleHandlers { get; } = new();
+    public bool Completed { get; internal set; }
 }
 
 /// <summary>Markup and handlers of a template; templates are not expanded in the headless host.</summary>
@@ -45,6 +46,7 @@ public static class HeadlessXaml
     private static readonly ConditionalWeakTable<object, HeadlessComponent> OwnerComponent = new();
     private static readonly ConditionalWeakTable<object, HeadlessTemplateInfo> Templates = new();
     private static readonly ConditionalWeakTable<object, Dictionary<string, string>> PendingMarkup = new();
+    private static readonly ConditionalWeakTable<object, object> InheritanceParents = new();
     private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> PropertyCache = new();
     private static readonly HashSet<string> BubblingEvents = new(StringComparer.Ordinal)
     {
@@ -79,11 +81,36 @@ public static class HeadlessXaml
         }
 
         ApplyStyleHandlers(component);
+        component.Completed = true;
         if (root is DependencyObject rootObject)
         {
             HeadlessBindings.ReapplySubtree(rootObject);
         }
     }
+
+    /// <summary>
+    /// The logical parent, or for objects outside the element tree (resources, grid columns) the element
+    /// that owns them — WPF's "inheritance context", used for DataContext and ancestor lookups.
+    /// </summary>
+    public static object? GetParent(object element)
+        => (element as UIElement)?.HeadlessParent
+           ?? (element is DataGridColumn { DataGridOwner: { } owner } ? owner : null)
+           ?? (InheritanceParents.TryGetValue(element, out var parent) ? parent : null);
+
+    internal static object? InheritedDataContext(object? parent)
+    {
+        for (var current = parent; current is not null; current = GetParent(current))
+        {
+            if (current is FrameworkElement framework)
+            {
+                return framework.DataContext;
+            }
+        }
+
+        return null;
+    }
+
+    internal static void SetInheritanceParent(object element, object parent) => InheritanceParents.AddOrUpdate(element, parent);
 
     public static HeadlessComponent? GetComponent(object root) => Components.TryGetValue(root, out var component) ? component : null;
 
@@ -134,11 +161,7 @@ public static class HeadlessXaml
             if (resources is not null)
             {
                 resources[key ?? KeyFor(element)] = element;
-                if (element is UIElement resourceElement && parent is UIElement parentElement)
-                {
-                    resourceElement.HeadlessParent = parentElement;
-                }
-
+                SetInheritanceParent(element, parent);
                 return;
             }
         }
@@ -146,10 +169,21 @@ public static class HeadlessXaml
         if (parentProperty is not null)
         {
             AddToProperty(parent, parentProperty, element);
-            return;
+        }
+        else
+        {
+            AddContent(parent, element);
         }
 
-        AddContent(parent, element);
+        if (element is not UIElement)
+        {
+            SetInheritanceParent(element, parent);
+        }
+
+        if (GetOwningComponent(parent) is { Completed: true } && element is DependencyObject attached)
+        {
+            HeadlessBindings.ReapplySubtree(attached);
+        }
     }
 
     public static void AddValue(object root, object? parent, string? parentProperty, string? key, string typeName, string text)
@@ -551,6 +585,17 @@ public static class HeadlessXaml
             }
 
             yield return current;
+            if (current is FrameworkElement { ExistingResources: { } resources })
+            {
+                foreach (DictionaryEntry entry in resources)
+                {
+                    if (entry.Value is DependencyObject resource and not UIElement)
+                    {
+                        stack.Push(resource);
+                    }
+                }
+            }
+
             var children = GetLogicalChildren(current);
             for (var i = children.Count - 1; i >= 0; i--)
             {

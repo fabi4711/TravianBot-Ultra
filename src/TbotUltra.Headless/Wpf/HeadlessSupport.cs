@@ -258,7 +258,8 @@ public static class MarkupParser
 
     private static RelativeSource ToRelativeSource(MarkupNode node)
     {
-        var modeText = node.Positional.FirstOrDefault() as string ?? (node.Named.GetValueOrDefault("Mode") as string) ?? "Self";
+        var modeText = node.Positional.FirstOrDefault() as string ?? (node.Named.GetValueOrDefault("Mode") as string)
+            ?? (node.Named.ContainsKey("AncestorType") ? "FindAncestor" : "Self");
         var relative = new RelativeSource(Enum.Parse<RelativeSourceMode>(modeText, ignoreCase: true));
         if (node.Named.GetValueOrDefault("AncestorType") is { } ancestor)
         {

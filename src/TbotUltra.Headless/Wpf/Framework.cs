@@ -53,6 +53,8 @@ public class FrameworkElement : UIElement, IFrameworkInputElement, ISupportIniti
     public InputBindingCollection InputBindings { get; } = new();
     public Language Language { get; set; } = new();
 
+    internal ResourceDictionary? ExistingResources => _resources;
+
     public ResourceDictionary Resources
     {
         get => _resources ??= new ResourceDictionary();
@@ -62,7 +64,7 @@ public class FrameworkElement : UIElement, IFrameworkInputElement, ISupportIniti
     /// <summary>Inherited from the logical parent unless set locally, as in WPF.</summary>
     public object? DataContext
     {
-        get => _hasLocalDataContext ? _dataContext : (HeadlessParent as FrameworkElement)?.DataContext;
+        get => _hasLocalDataContext ? _dataContext : HeadlessXaml.InheritedDataContext(HeadlessParent);
         set
         {
             var old = DataContext;

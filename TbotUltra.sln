@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TbotUltra.Headless", "src\T
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TbotUltra.Headless.Generators", "src\TbotUltra.Headless.Generators\TbotUltra.Headless.Generators.csproj", "{0B71CCC9-EF90-4B47-A947-A800EBB762EF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TbotUltra.Web", "src\TbotUltra.Web\TbotUltra.Web.csproj", "{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -113,6 +115,18 @@ Global
 		{0B71CCC9-EF90-4B47-A947-A800EBB762EF}.Release|x64.Build.0 = Release|Any CPU
 		{0B71CCC9-EF90-4B47-A947-A800EBB762EF}.Release|x86.ActiveCfg = Release|Any CPU
 		{0B71CCC9-EF90-4B47-A947-A800EBB762EF}.Release|x86.Build.0 = Release|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Debug|x64.Build.0 = Debug|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Debug|x86.Build.0 = Debug|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Release|Any CPU.Build.0 = Release|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Release|x64.ActiveCfg = Release|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Release|x64.Build.0 = Release|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Release|x86.ActiveCfg = Release|Any CPU
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -124,5 +138,6 @@ Global
 		{43DC0D70-E50D-4910-894E-286D0F249070} = {4DB016DB-616D-4F47-9E33-5644E60918AA}
 		{B0BADD83-980F-4251-A204-18E24786B406} = {4DB016DB-616D-4F47-9E33-5644E60918AA}
 		{0B71CCC9-EF90-4B47-A947-A800EBB762EF} = {4DB016DB-616D-4F47-9E33-5644E60918AA}
+		{144E2282-2AD5-4E3E-BEE5-9F6BFAE63194} = {4DB016DB-616D-4F47-9E33-5644E60918AA}
 	EndGlobalSection
 EndGlobal
