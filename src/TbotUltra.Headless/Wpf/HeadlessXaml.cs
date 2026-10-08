@@ -81,6 +81,16 @@ public static class HeadlessXaml
         }
 
         ApplyStyleHandlers(component);
+        foreach (var element in component.Ids.Keys.OfType<FrameworkElement>())
+        {
+            ApplyStyleSetters(element);
+        }
+
+        if (root is FrameworkElement rootElement)
+        {
+            ApplyStyleSetters(rootElement);
+        }
+
         component.Completed = true;
         if (root is DependencyObject rootObject)
         {
@@ -370,6 +380,25 @@ public static class HeadlessXaml
         }
     }
 
+    public static void ResolvePendingMarkupFor(object target) => ResolvePendingMarkup(target);
+
+    public static void AttachTemplateChild(object parent, string? parentProperty, object child)
+    {
+        if (parentProperty is not null)
+        {
+            AddToProperty(parent, parentProperty, child);
+        }
+        else
+        {
+            AddContent(parent, child);
+        }
+
+        if (child is not UIElement)
+        {
+            SetInheritanceParent(child, parent);
+        }
+    }
+
     private static void AddToProperty(object parent, string property, object child)
     {
         if (child is BindingBase binding)
@@ -474,6 +503,49 @@ public static class HeadlessXaml
                 {
                     TrySetProperty(target, property, value);
                 }
+            }
+        }
+    }
+
+    // Simple setters only; templates, triggers and visual states are not modeled headless.
+    private static readonly HashSet<string> StyledProperties = new(StringComparer.Ordinal)
+    {
+        "Background", "Foreground", "BorderBrush", "BorderThickness", "Padding", "Margin", "FontSize", "FontWeight",
+        "FontStyle", "Width", "Height", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "CornerRadius", "Visibility",
+        "HorizontalAlignment", "VerticalAlignment", "HorizontalContentAlignment", "TextWrapping", "Opacity", "Cursor",
+    };
+
+    /// <summary>Applies an explicit style's plain setters to properties the markup did not set locally.</summary>
+    public static void ApplyStyleSetters(FrameworkElement element)
+    {
+        if (element.Style is not { } style)
+        {
+            return;
+        }
+
+        var chain = new List<Style>();
+        for (var current = style; current is not null && chain.Count < 8; current = current.BasedOn)
+        {
+            chain.Insert(0, current);
+        }
+
+        foreach (var (property, value) in chain.SelectMany(item => item.HeadlessSetters))
+        {
+            if (!StyledProperties.Contains(property) || element.HasNamedValue(property) || HeadlessBindings.GetBindings(element).ContainsKey(property))
+            {
+                continue;
+            }
+
+            object? resolved = value;
+            if (value.StartsWith('{') && MarkupParser.TryParse(value, out var node))
+            {
+                resolved = MarkupParser.Evaluate(node, element);
+            }
+
+            if (resolved is not null)
+            {
+                TrySetProperty(element, property, resolved);
+                element.MarkStyleValue(property);
             }
         }
     }
@@ -677,7 +749,27 @@ public static class HeadlessXaml
     public static void SetAttached(DependencyObject element, string name, object? value) => element.SetNamedValue(name, value);
 
     public static T GetAttached<T>(DependencyObject element, string name, T defaultValue)
-        => element.GetNamedValue(name) is T value ? value : defaultValue;
+    {
+        var raw = element.GetNamedValue(name);
+        if (raw is T value)
+        {
+            return value;
+        }
+
+        if (raw is null)
+        {
+            return defaultValue;
+        }
+
+        try
+        {
+            return ConvertTo(raw is string ? raw : Convert.ToString(raw, CultureInfo.InvariantCulture), typeof(T)) is T converted ? converted : defaultValue;
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidCastException or OverflowException)
+        {
+            return defaultValue;
+        }
+    }
 
     private static object ConvertAttached(string value)
         => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) ? number

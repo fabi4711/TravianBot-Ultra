@@ -409,6 +409,20 @@ public static class HeadlessResources
                         HeadlessKey = key,
                         HeadlessTargetTypeName = HeadlessXaml.StripPrefix(element.Attribute("TargetType")?.Value ?? string.Empty),
                     };
+                    foreach (var setter in element.Elements().Where(child => child.Name.LocalName == "Setter"))
+                    {
+                        if (setter.Attribute("Property")?.Value is { } setterProperty && setter.Attribute("Value")?.Value is { } setterValue)
+                        {
+                            style.HeadlessSetters[HeadlessXaml.StripPrefix(setterProperty)] = setterValue;
+                        }
+                    }
+
+                    if (element.Attribute("BasedOn")?.Value is { } basedOn && MarkupParser.TryParse(basedOn, out var basedOnNode) &&
+                        basedOnNode.Positional.FirstOrDefault() is string baseKey && resources.GetValueOrDefault(baseKey) is Style baseStyle)
+                    {
+                        style.BasedOn = baseStyle;
+                    }
+
                     resources[key ?? style.HeadlessTargetTypeName ?? Guid.NewGuid().ToString()] = style;
                     continue;
                 }

@@ -516,6 +516,13 @@ public class DependencyObject : DispatcherObject, INotifyPropertyChanged
 
     internal object? GetNamedValue(string name) => _values.TryGetValue(name, out var value) ? value : null;
 
+    private HashSet<string>? _styleValues;
+
+    /// <summary>True when the property holds a value set locally (markup or code), not by a style.</summary>
+    internal bool HasNamedValue(string name) => _values.ContainsKey(name) && _styleValues?.Contains(name) != true;
+
+    internal void MarkStyleValue(string name) => (_styleValues ??= new HashSet<string>(StringComparer.Ordinal)).Add(name);
+
     internal void SetNamedValue(string name, object? value)
     {
         _values[name] = value;
