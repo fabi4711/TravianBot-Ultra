@@ -299,6 +299,8 @@
         element.disabled = !!node.off;
         element.classList.toggle('on', node.chk === true);
         element.dataset.style = node.style || '';
+        // A content-less toggle is a switch in the desktop theme.
+        element.classList.toggle('switch', node.k === 'toggle' && !node.t && !(node.c && node.c.length));
         break;
       case 'check':
       case 'radio':
@@ -634,6 +636,19 @@
     if (className) element.className = className;
     return element;
   }
+
+  // Live view of the bot's browser (noVNC), served next to the web UI.
+  fetch('api/info').then(response => response.json()).then(info => {
+    if (!info.vncUrl) return;
+    const link = document.createElement('a');
+    link.className = 'vnc-link';
+    link.textContent = '🖥 Browser';
+    link.title = "Live view of the bot's browser";
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.href = info.vncUrl.replace('{host}', location.hostname);
+    document.body.append(link);
+  }).catch(() => {});
 
   connect();
 })();

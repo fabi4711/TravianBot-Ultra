@@ -39,6 +39,14 @@ public static class HeadlessBindings
         state.Apply();
     }
 
+    public static void ClearBinding(DependencyObject target, string property)
+    {
+        if (Bound.TryGetValue(target, out var states) && states.Remove(property, out var state))
+        {
+            state.Detach();
+        }
+    }
+
     public static IReadOnlyDictionary<string, BindingBase> GetBindings(DependencyObject target)
         => Bound.TryGetValue(target, out var states)
             ? states.ToDictionary(pair => pair.Key, pair => pair.Value.Binding, StringComparer.Ordinal)

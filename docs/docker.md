@@ -36,6 +36,7 @@ The bot's browser still runs with a visible window (as on Windows) on a virtual 
 | `VNC_PASSWORD` | – | Password for the noVNC live view. |
 | `ENABLE_VNC` | `true` | Set `false` to skip VNC/noVNC. |
 | `SCREEN_RESOLUTION` | `1600x900x24` | Virtual display size. |
+| `TBOT_VNC_URL` | `http://{host}:6080/vnc.html?autoconnect=1&resize=scale` | Target of the "Browser" link in the web UI; change it when port 6080 is mapped differently or proxied. `{host}` is the host name the UI was opened with. |
 | `TZ` | `Europe/Berlin` | Time zone (pacing and sleep schedules use local time). |
 | `TBOT_PROJECT_ROOT` | `/data` | Data folder (config, `.env`, logs). |
 

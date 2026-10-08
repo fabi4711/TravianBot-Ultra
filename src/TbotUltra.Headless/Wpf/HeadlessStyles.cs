@@ -263,6 +263,7 @@ public static class HeadlessStyles
     {
         private readonly WeakReference<FrameworkElement> _element;
         private readonly Dictionary<string, object?> _applied = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _styleBindings = new(StringComparer.Ordinal);
         private bool _evaluating;
 
         public StyledElement(FrameworkElement element, List<Style> chain)
@@ -333,15 +334,30 @@ public static class HeadlessStyles
                         continue;
                     }
 
-                    if (HeadlessBindings.GetBindings(element).ContainsKey(property))
+                    if (!_styleBindings.Contains(property) && HeadlessBindings.GetBindings(element).ContainsKey(property))
                     {
                         continue;
                     }
 
                     var value = Resolve(setter, element);
-                    if (_applied.TryGetValue(property, out var previous) && Equals(previous, value))
+                    if (_applied.TryGetValue(property, out var previous) && ReferenceEquals(previous, value) | Equals(previous, value))
                     {
                         continue;
+                    }
+
+                    if (value is BindingBase binding)
+                    {
+                        // A setter whose value is a binding binds the property for as long as it applies.
+                        _styleBindings.Add(property);
+                        _applied[property] = binding;
+                        HeadlessBindings.SetBinding(element, property, binding);
+                        element.MarkStyleValue(property);
+                        continue;
+                    }
+
+                    if (_styleBindings.Remove(property))
+                    {
+                        HeadlessBindings.ClearBinding(element, property);
                     }
 
                     if (HeadlessXaml.TrySetProperty(element, property, value))
@@ -355,6 +371,11 @@ public static class HeadlessStyles
                 foreach (var property in _applied.Keys.Where(property => !desired.ContainsKey(property)).ToList())
                 {
                     _applied.Remove(property);
+                    if (_styleBindings.Remove(property))
+                    {
+                        HeadlessBindings.ClearBinding(element, property);
+                    }
+
                     element.ClearStyleValue(property);
                 }
             }

@@ -48,6 +48,13 @@ app.Map("/ws", async (HttpContext context, UiHub hub) =>
     await hub.AcceptAsync(socket, context.RequestAborted);
 });
 app.MapGet("/health", () => Results.Ok("ok"));
+app.MapGet("/api/info", () => Results.Ok(new
+{
+    // {host} is replaced in the browser, so the link works however the container is reached.
+    vncUrl = Environment.GetEnvironmentVariable("ENABLE_VNC") == "false"
+        ? null
+        : Environment.GetEnvironmentVariable("TBOT_VNC_URL") ?? (Environment.GetEnvironmentVariable("DISPLAY") is null ? null : "http://{host}:6080/vnc.html?autoconnect=1&resize=scale"),
+}));
 
 // Links the desktop code opens with the OS shell (xdg-open in the container) open in the browser tab.
 app.MapPost("/api/open", async (HttpContext context, UiHub hub) =>
