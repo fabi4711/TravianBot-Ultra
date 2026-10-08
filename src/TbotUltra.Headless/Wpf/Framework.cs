@@ -299,6 +299,7 @@ public sealed class WindowCollection : IEnumerable<Window>
 public class Application : DispatcherObject
 {
     private static Application? _current;
+    private bool _shuttingDown;
     private ResourceDictionary _resources = new();
 
     public Application()
@@ -351,13 +352,28 @@ public class Application : DispatcherObject
 
     public void Shutdown(int exitCode)
     {
-        Exit?.Invoke(this, new ExitEventArgs { ApplicationExitCode = exitCode });
+        if (_shuttingDown)
+        {
+            return;
+        }
+
+        _shuttingDown = true;
+
+        // As in WPF, shutting down closes every window that is still open.
+        foreach (var window in Windows.Reverse().ToList())
+        {
+            window.HeadlessForceClose();
+        }
+
+        OnExit(new ExitEventArgs { ApplicationExitCode = exitCode });
         HeadlessShutdownRequested?.Invoke(exitCode);
     }
 
     protected virtual void OnStartup(StartupEventArgs e) => Startup?.Invoke(this, e);
 
     protected virtual void OnExit(ExitEventArgs e) => Exit?.Invoke(this, e);
+
+    public bool IsShuttingDown => _shuttingDown;
 
     internal void RaiseActivated() => Activated?.Invoke(this, EventArgs.Empty);
 
@@ -528,6 +544,28 @@ public class Window : Controls.ContentControl
             application.ShutdownMode == ShutdownMode.OnMainWindowClose)
         {
             application.Shutdown();
+        }
+    }
+
+    /// <summary>Closes without raising Closing (host shutdown), releasing a modal caller.</summary>
+    public void HeadlessForceClose()
+    {
+        if (_closed)
+        {
+            return;
+        }
+
+        _closed = true;
+        IsShown = false;
+        Visibility = Visibility.Collapsed;
+        HeadlessXaml.RaiseUnloadedTree(this);
+        Application.Current?.Windows.Remove(this);
+        HeadlessWindows.ClosedWindow(this);
+        OnClosed(EventArgs.Empty);
+        Closed?.Invoke(this, EventArgs.Empty);
+        if (_modalFrame is not null)
+        {
+            _modalFrame.Continue = false;
         }
     }
 

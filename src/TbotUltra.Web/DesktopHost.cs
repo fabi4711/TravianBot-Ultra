@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Windows;
+using System.Windows.Headless;
 using System.Windows.Threading;
 using TbotUltra.Desktop;
 
@@ -49,11 +50,47 @@ public sealed class DesktopHost : IHostedService
         }).Task;
     }
 
+    /// <summary>
+    /// Closes open dialogs, then the main window, and waits for the app's own shutdown (stopping the
+    /// automation, closing the browser, saving state) so a container stop does not lose data.
+    /// </summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (MainWindow is { IsClosed: false } window)
+        if (MainWindow is not { IsClosed: false } window)
         {
-            await Dispatcher.Main.InvokeAsync(window.Close).Task.WaitAsync(cancellationToken);
+            return;
+        }
+
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await Dispatcher.Main.InvokeAsync(() =>
+        {
+            window.Closed += (_, _) => closed.TrySetResult();
+            HeadlessDialogs.IsAttended = static () => false;
+            foreach (var dialog in HeadlessWindows.Open.Where(open => !ReferenceEquals(open, window)).Reverse())
+            {
+                // Like the user cancelling it; only a dialog that refuses to close is torn down.
+                dialog.Close();
+                if (!dialog.IsClosed)
+                {
+                    dialog.HeadlessForceClose();
+                }
+            }
+        }).Task.WaitAsync(cancellationToken);
+
+        // Close from a fresh dispatcher turn, after the modal frames above have unwound.
+        _ = Dispatcher.Main.InvokeAsync(window.Close);
+        try
+        {
+            await closed.Task.WaitAsync(TimeSpan.FromSeconds(25), cancellationToken);
+            _logger.LogInformation("Desktop app shut down cleanly.");
+        }
+        catch (TimeoutException)
+        {
+            _logger.LogWarning("Desktop app did not finish shutting down in time.");
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Host shutdown timeout reached before the desktop app finished.");
         }
     }
 }

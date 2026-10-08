@@ -2,6 +2,8 @@ using System.Text;
 using TbotUltra.Web;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+builder.Services.Configure<HostOptions>(options => options.ShutdownTimeout = TimeSpan.FromSeconds(40));
 builder.Services.AddSingleton<DesktopHost>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DesktopHost>());
 builder.Services.AddSingleton(_ => new FileBridge(TbotUltra.Worker.ProjectRootLocator.FindProjectRoot()));

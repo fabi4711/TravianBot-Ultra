@@ -6,6 +6,7 @@ services:
     image: ghcr.io/fabianhardt/travianbot-ultra:latest
     container_name: tbot-ultra
     restart: unless-stopped
+    stop_grace_period: 45s           # lets the bot stop its browser and save state
     ports:
       - "8080:8080"   # web UI
       - "6080:6080"   # live view of the bot's browser (noVNC)

@@ -178,7 +178,23 @@ public sealed class UiHub : BackgroundService
                 var input = JsonNode.Parse(json)?.AsObject();
                 if (input is not null)
                 {
-                    await Dispatcher.Main.InvokeAsync(() => Apply(input)).Task;
+                    // Not awaited: input that opens a modal dialog runs until the dialog closes, and the
+                    // connection must keep delivering input meanwhile. The dispatcher keeps the order.
+                    _ = Dispatcher.Main.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            Apply(input);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Applying UI input failed: {Input}", json);
+                        }
+                        finally
+                        {
+                            MarkDirty();
+                        }
+                    });
                 }
             }
             catch (Exception ex)
