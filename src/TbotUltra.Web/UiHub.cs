@@ -29,9 +29,14 @@ public sealed class UiHub : BackgroundService
     private string _lastSnapshot = string.Empty;
     private int _dirty;
 
-    public UiHub(ILogger<UiHub> logger)
+    private readonly FileBridge _files;
+
+    public UiHub(ILogger<UiHub> logger, FileBridge files)
     {
         _logger = logger;
+        _files = files;
+        files.Changed += MarkDirty;
+        files.DownloadReady += url => Broadcast(new JsonObject { ["download"] = url }.ToJsonString());
         HeadlessXaml.Changed += (_, _) => MarkDirty();
         HeadlessWindows.WindowOpened += _ => MarkDirty();
         HeadlessWindows.WindowClosed += _ => MarkDirty();
@@ -125,6 +130,12 @@ public sealed class UiHub : BackgroundService
     private async Task<string> BuildSnapshotAsync()
     {
         var snapshot = await Dispatcher.Main.InvokeAsync(() => new UiSnapshot(_ids).Build()).Task.ConfigureAwait(false);
+        snapshot["files"] = new JsonArray(_files.Pending.Select(request => (JsonNode)new JsonObject
+        {
+            ["id"] = request.Id.ToString(),
+            ["title"] = request.Title,
+            ["accept"] = request.Accept,
+        }).ToArray());
         return snapshot.ToJsonString();
     }
 
@@ -183,6 +194,12 @@ public sealed class UiHub : BackgroundService
     private void Apply(JsonObject input)
     {
         var kind = input["e"]?.GetValue<string>();
+        if (kind == "filecancel" && Guid.TryParse(input["id"]?.GetValue<string>(), out var fileRequest))
+        {
+            _files.Cancel(fileRequest);
+            return;
+        }
+
         if (kind == "msg")
         {
             var id = input["id"]?.GetValue<string>();

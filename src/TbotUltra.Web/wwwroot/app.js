@@ -30,6 +30,15 @@
     };
     socket.onmessage = event => {
       const data = JSON.parse(event.data);
+      if (data.download !== undefined) {
+        const link = document.createElement('a');
+        link.href = data.download;
+        link.download = '';
+        document.body.append(link);
+        link.click();
+        link.remove();
+        return;
+      }
       if (data.open !== undefined) {
         window.open(data.open, '_blank', 'noopener');
         return;
@@ -64,6 +73,7 @@
     const dialogs = windows.filter(w => w !== main).map(renderWindow);
     setChildren(dialogHost, dialogs);
     renderMessages(snapshot.messages || []);
+    renderFileRequests(snapshot.files || []);
 
     for (const id of [...cache.keys()]) {
       if (!seen.has(id)) cache.delete(id);
@@ -132,6 +142,50 @@
       return box;
     });
     setChildren(messageHost, nodes);
+  }
+
+  function renderFileRequests(requests) {
+    let host = document.getElementById('files');
+    if (!host) {
+      host = el('div');
+      host.id = 'files';
+      document.body.append(host);
+    }
+    const nodes = requests.map(request => {
+      const key = 'file' + request.id;
+      let box = cache.get(key)?.el;
+      if (!box) {
+        box = el('div', 'dialog-backdrop message');
+        const dialog = el('div', 'dialog small');
+        const title = el('div', 'dialog-title');
+        title.textContent = request.title;
+        const body = el('div', 'message-text');
+        const input = el('input');
+        input.type = 'file';
+        if (request.accept) input.accept = request.accept;
+        body.append(input);
+        const buttons = el('div', 'message-buttons');
+        const upload = el('button', 'btn primary');
+        upload.textContent = 'Upload';
+        upload.onclick = async () => {
+          if (!input.files.length) return;
+          const form = new FormData();
+          form.append('file', input.files[0]);
+          upload.disabled = true;
+          await fetch(`api/upload/${request.id}`, { method: 'POST', body: form });
+        };
+        const cancel = el('button', 'btn');
+        cancel.textContent = 'Cancel';
+        cancel.onclick = () => send({ e: 'filecancel', id: request.id });
+        buttons.append(upload, cancel);
+        dialog.append(title, body, buttons);
+        box.append(dialog);
+      }
+      cache.set(key, { el: box, k: 'file' });
+      seen.add(key);
+      return box;
+    });
+    setChildren(host, nodes);
   }
 
   // ---- element rendering -------------------------------------------------------------------

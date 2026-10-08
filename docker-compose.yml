@@ -1,8 +1,9 @@
-# Portainer: Stacks → Add stack → paste this file (or point it at the repository).
+# Portainer: Stacks → Add stack → Web editor, paste this file.
+# Uses the image published by .github/workflows/docker-image.yml. To build from the repository
+# instead (Portainer "Repository" stack), replace `image:` with `build: .`.
 services:
   tbot-ultra:
-    build: .
-    image: tbot-ultra:latest
+    image: ghcr.io/fabianhardt/travianbot-ultra:latest
     container_name: tbot-ultra
     restart: unless-stopped
     ports:

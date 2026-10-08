@@ -21,11 +21,18 @@ The bot's browser still runs with a visible window (as on Windows) on a virtual 
 
 ## Portainer
 
-1. Stacks → Add stack → Repository: this repository, compose path `docker-compose.yml`
-   (or Web editor: paste `docker-compose.yml` and build the image beforehand).
+**Prebuilt image (recommended).** Every push to `main`/`linux-web` builds
+`ghcr.io/fabianhardt/travianbot-ultra:latest` (workflow `Docker image`). If the package is private,
+add GHCR as a registry in Portainer (user: GitHub name, password: a token with `read:packages`)
+or make the package public under GitHub → Packages.
+
+1. Stacks → Add stack → Web editor: paste `docker-compose.yml`.
 2. Change `TBOT_WEB_PASSWORD` and `VNC_PASSWORD`.
 3. Deploy, then open `http://<host>:8080` (user `admin`, your password).
-4. Manage → add the account → Login. Watch or intervene in the browser at `http://<host>:6080`.
+4. Manage → add the account → Login. Watch or intervene in the browser via the "Browser" link
+   (bottom right) or `http://<host>:6080`.
+
+**Build on the host.** Stacks → Add stack → Repository, compose path `docker-compose.build.yml`.
 
 ## Environment
 
@@ -46,4 +53,6 @@ The bot's browser still runs with a visible window (as on Windows) on a virtual 
   build with `--build-arg INSTALL_GOOGLE_CHROME=false` to use only the bundled Chromium.
 - In-app self-update downloads the Windows build and cannot install it; update by pulling/rebuilding the image.
 - Opening folders ("Open logs folder") is not available; links open in a new browser tab.
+- File dialogs become browser transfers: imports ask for an upload, exports download automatically
+  (files are kept under `/data/web-transfer`).
 - One container runs one bot instance. For several accounts in parallel, run several containers with separate volumes.

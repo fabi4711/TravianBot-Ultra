@@ -3,16 +3,18 @@
 
 # ---- build ---------------------------------------------------------------------------------
 # The .NET 10 SDK builds the net8.0 projects with the same compiler generation upstream CI uses.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS build
 WORKDIR /src
 COPY . .
 RUN dotnet publish src/TbotUltra.Web/TbotUltra.Web.csproj -c Release -o /app \
       -p:TreatWarningsAsErrors=false
 
 # ---- runtime -------------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-noble AS runtime
 
 ARG INSTALL_GOOGLE_CHROME=true
+# Only for offline test builds: skip the Chromium download (a browser must then be mounted).
+ARG SKIP_BROWSER_DOWNLOAD=false
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TBOT_PROJECT_ROOT=/data \
@@ -46,7 +48,7 @@ COPY --from=build /app .
 # with the app so the browser revision always matches the Playwright package.
 RUN NODE="$(ls .playwright/node/*/node | head -n1)" \
  && "$NODE" .playwright/package/cli.js install-deps chromium \
- && "$NODE" .playwright/package/cli.js install chromium --no-shell \
+ && if [ "$SKIP_BROWSER_DOWNLOAD" != "true" ]; then "$NODE" .playwright/package/cli.js install chromium --no-shell; fi \
  && rm -rf /var/lib/apt/lists/*
 
 COPY .release-template /app/seed

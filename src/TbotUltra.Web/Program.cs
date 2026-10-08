@@ -4,6 +4,7 @@ using TbotUltra.Web;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSingleton<DesktopHost>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<DesktopHost>());
+builder.Services.AddSingleton(_ => new FileBridge(TbotUltra.Worker.ProjectRootLocator.FindProjectRoot()));
 builder.Services.AddSingleton<UiHub>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<UiHub>());
 
@@ -48,6 +49,19 @@ app.Map("/ws", async (HttpContext context, UiHub hub) =>
     await hub.AcceptAsync(socket, context.RequestAborted);
 });
 app.MapGet("/health", () => Results.Ok("ok"));
+
+app.MapPost("/api/upload/{id:guid}", async (Guid id, HttpRequest request, FileBridge files) =>
+{
+    var form = await request.ReadFormAsync();
+    var file = form.Files.FirstOrDefault();
+    return file is not null && await files.CompleteUploadAsync(id, file) ? Results.Ok() : Results.BadRequest();
+}).DisableAntiforgery();
+
+app.MapGet("/api/files/{name}", (string name, FileBridge files) =>
+{
+    var path = Path.Combine(files.ExportDirectory, Path.GetFileName(name));
+    return File.Exists(path) ? Results.File(path, "application/octet-stream", Path.GetFileName(path)) : Results.NotFound();
+});
 app.MapGet("/api/info", () => Results.Ok(new
 {
     // {host} is replaced in the browser, so the link works however the container is reached.
