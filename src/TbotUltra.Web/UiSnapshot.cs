@@ -357,6 +357,12 @@ public sealed class UiSnapshot
                 node["bg"] = Css(shape.Fill);
                 node["bb"] = Css(shape.Stroke);
                 break;
+            case Image image:
+                node["k"] = "img";
+                node["src"] = (image.Source as System.Windows.Media.Imaging.BitmapImage)?.UriSource is { } uri
+                    ? "assets/" + Uri.EscapeDataString(System.IO.Path.GetFileName(uri.OriginalString))
+                    : null;
+                break;
             case Separator:
                 node["k"] = "sep";
                 break;

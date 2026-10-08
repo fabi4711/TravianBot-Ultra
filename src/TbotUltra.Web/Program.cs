@@ -52,6 +52,14 @@ app.Map("/ws", async (HttpContext context, UiHub hub) =>
 });
 app.MapGet("/health", () => Results.Ok("ok"));
 
+// Images referenced by the desktop markup (/Assets/...), copied next to the app at build time.
+app.MapGet("/assets/{name}", (string name) =>
+{
+    var path = Path.Combine(AppContext.BaseDirectory, "wwwroot", "assets", Path.GetFileName(name));
+    var type = Path.GetExtension(path).ToLowerInvariant() switch { ".png" => "image/png", ".jpg" => "image/jpeg", _ => "application/octet-stream" };
+    return File.Exists(path) ? Results.File(path, type) : Results.NotFound();
+});
+
 app.MapPost("/api/upload/{id:guid}", async (Guid id, HttpRequest request, FileBridge files) =>
 {
     var form = await request.ReadFormAsync();

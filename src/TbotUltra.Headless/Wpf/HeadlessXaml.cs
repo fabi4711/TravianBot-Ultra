@@ -987,7 +987,12 @@ public static class HeadlessXaml
             return HeadlessResources.ResolveType(text);
         }
 
-        if (typeof(ImageSource).IsAssignableFrom(type) || type == typeof(Transform) || type == typeof(Geometry))
+        if (typeof(ImageSource).IsAssignableFrom(type))
+        {
+            return new System.Windows.Media.Imaging.BitmapImage(new Uri(text, UriKind.RelativeOrAbsolute));
+        }
+
+        if (type == typeof(Transform) || type == typeof(Geometry))
         {
             return null;
         }

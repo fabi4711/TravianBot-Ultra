@@ -298,6 +298,7 @@
         return bar;
       }
       case 'sep': return el('hr', 'sep');
+      case 'img': return el('img', 'img');
       case 'shape': return el('div', 'shape');
       case 'none': return el('span', 'none');
       default: return el('div', node.k);
@@ -407,6 +408,9 @@
         if (node.fg) element._fill.style.background = node.fg;
         break;
       }
+      case 'img':
+        if (node.src && element.getAttribute('src') !== node.src) element.src = node.src;
+        break;
       case 'shape':
         element.classList.toggle('round', !!node.round);
         element.style.background = node.bg || '';

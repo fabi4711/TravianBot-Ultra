@@ -12,6 +12,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Images the desktop markup references as /Assets/..., served to the browser. -->
+    <Content Include="..\..\assets\icons\*.png;..\..\assets\images\*.png;..\..\assets\images\*.jpg"
+             Link="wwwroot\assets\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\TbotUltra.Headless\TbotUltra.Headless.csproj" />
   </ItemGroup>
 </Project>
