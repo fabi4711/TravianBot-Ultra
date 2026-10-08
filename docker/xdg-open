@@ -1,0 +1,3 @@
+#!/bin/sh
+# The desktop app opens links with the OS shell; in the container, hand them to the web UI instead.
+curl -fsS -X POST --data-urlencode "url=$1" "http://127.0.0.1:8080/api/open" >/dev/null 2>&1 || true

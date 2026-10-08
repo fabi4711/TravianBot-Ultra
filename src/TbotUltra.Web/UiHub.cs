@@ -112,6 +112,8 @@ public sealed class UiHub : BackgroundService
         }
     }
 
+    public void OpenInBrowser(string url) => Broadcast(new JsonObject { ["open"] = url }.ToJsonString());
+
     private void MarkDirty()
     {
         if (Interlocked.Exchange(ref _dirty, 1) == 0)

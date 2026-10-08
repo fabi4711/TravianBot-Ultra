@@ -1,0 +1,20 @@
+# Portainer: Stacks → Add stack → paste this file (or point it at the repository).
+services:
+  tbot-ultra:
+    build: .
+    image: tbot-ultra:latest
+    container_name: tbot-ultra
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # web UI
+      - "6080:6080"   # live view of the bot's browser (noVNC)
+    environment:
+      TBOT_WEB_PASSWORD: "change-me"   # basic auth for the web UI (user: admin)
+      VNC_PASSWORD: "change-me"        # password for the browser live view
+      TZ: "Europe/Berlin"
+    volumes:
+      - tbot-data:/data
+    shm_size: "1gb"                    # Chromium needs more than Docker's 64 MB default
+
+volumes:
+  tbot-data:

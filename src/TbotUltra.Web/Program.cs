@@ -17,7 +17,8 @@ if (!string.IsNullOrEmpty(password))
     var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{user}:{password}"));
     app.Use(async (context, next) =>
     {
-        if (context.Request.Headers.Authorization.ToString() != expected)
+        var isLocalOpen = context.Request.Path == "/api/open" && context.Connection.RemoteIpAddress is { } remote && System.Net.IPAddress.IsLoopback(remote);
+        if (!isLocalOpen && context.Request.Headers.Authorization.ToString() != expected)
         {
             context.Response.Headers.WWWAuthenticate = "Basic realm=\"Tbot Ultra\", charset=\"UTF-8\"";
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
@@ -47,5 +48,23 @@ app.Map("/ws", async (HttpContext context, UiHub hub) =>
     await hub.AcceptAsync(socket, context.RequestAborted);
 });
 app.MapGet("/health", () => Results.Ok("ok"));
+
+// Links the desktop code opens with the OS shell (xdg-open in the container) open in the browser tab.
+app.MapPost("/api/open", async (HttpContext context, UiHub hub) =>
+{
+    if (context.Connection.RemoteIpAddress is not { } remote || !System.Net.IPAddress.IsLoopback(remote))
+    {
+        return Results.Forbid();
+    }
+
+    var form = await context.Request.ReadFormAsync();
+    var url = form["url"].ToString();
+    if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+    {
+        hub.OpenInBrowser(uri.ToString());
+    }
+
+    return Results.Ok();
+});
 
 app.Run();

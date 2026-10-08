@@ -30,6 +30,10 @@
     };
     socket.onmessage = event => {
       const data = JSON.parse(event.data);
+      if (data.open !== undefined) {
+        window.open(data.open, '_blank', 'noopener');
+        return;
+      }
       if (data.clip !== undefined) {
         navigator.clipboard?.writeText(data.clip).catch(() => {});
         return;
