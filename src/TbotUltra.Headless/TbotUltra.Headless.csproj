@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The unchanged TbotUltra.Desktop sources compiled for Linux: the WPF markup compiler is replaced by
+    TbotUltra.Headless.Generators and the WPF assemblies by the minimal headless shim under Wpf/.
+    Keep Desktop free of headless-specific changes so upstream updates merge cleanly.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TbotUltra.Desktop</RootNamespace>
+    <AssemblyName>TbotUltra.Headless</AssemblyName>
+    <!-- Desktop code is held to its own analyzer baseline under net8.0-windows; the shim is not. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0067;CS0108;CS0114;CS0169;CS0414;CS0649;CA1001;CA1063;CA1816;CA2213</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TbotUltra.Core\TbotUltra.Core.csproj" />
+    <ProjectReference Include="..\TbotUltra.Worker\TbotUltra.Worker.csproj" />
+    <ProjectReference Include="..\TbotUltra.Headless.Generators\TbotUltra.Headless.Generators.csproj"
+                      OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.61.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Match the WPF SDK's implicit usings: System.IO.Path would clash with System.Windows.Shapes.Path. -->
+    <Using Remove="System.IO" />
+    <Using Remove="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <DesktopSource Include="..\TbotUltra.Desktop\**\*.cs"
+                   Exclude="..\TbotUltra.Desktop\AssemblyInfo.cs" />
+    <Compile Include="@(DesktopSource)" Link="Desktop\%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\TbotUltra.Desktop\Themes\*.xaml" LogicalName="Theme/%(Filename)%(Extension)" />
+    <AdditionalFiles Include="..\TbotUltra.Desktop\**\*.xaml"
+                     Exclude="..\TbotUltra.Desktop\Themes\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TbotUltra.Web" />
+    <InternalsVisibleTo Include="TbotUltra.Headless.Tests" />
+  </ItemGroup>
+</Project>
