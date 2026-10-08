@@ -15,6 +15,14 @@ fi
 cp -f /app/seed/config/buildings_catalog.json "$DATA/config/buildings_catalog.json"
 cp -f /app/seed/VERSION "$DATA/VERSION"
 
+# Safety net: an image built without the browser download fetches Playwright's Chromium on first start.
+if ! ls -d "${TBOT_PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}"/chromium-* >/dev/null 2>&1; then
+  echo "[entrypoint] Chromium missing, downloading it once"
+  NODE="$(ls /app/.playwright/node/*/node | head -n1)"
+  PLAYWRIGHT_BROWSERS_PATH="${TBOT_PLAYWRIGHT_BROWSERS_PATH:-/ms-playwright}" "$NODE" /app/.playwright/package/cli.js install chromium --no-shell \
+    || echo "[entrypoint] Chromium download failed; the bot cannot open its browser until it succeeds"
+fi
+
 rm -f /tmp/.X99-lock
 Xvfb "$DISPLAY" -screen 0 "${SCREEN_RESOLUTION:-1600x900x24}" -nolisten tcp &
 for _ in $(seq 1 50); do [ -e /tmp/.X11-unix/X99 ] && break; sleep 0.1; done
