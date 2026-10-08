@@ -143,7 +143,7 @@ public sealed class XamlHeadlessGenerator : IIncrementalGenerator
         if (localName.Contains("."))
         {
             var property = localName.Substring(localName.LastIndexOf('.') + 1);
-            if (SkippedElements.Contains(localName) || property is "Triggers" or "Style" or "Template")
+            if (SkippedElements.Contains(localName) || property is "Triggers" or "Template")
             {
                 return;
             }
@@ -240,10 +240,8 @@ public sealed class XamlHeadlessGenerator : IIncrementalGenerator
     private static void EmitStyle(EmitState state, XElement element, string parentVariable, string? parentProperty, string? key)
     {
         var variable = $"__s{++state.Counter}";
-        var targetType = element.Attribute("TargetType")?.Value ?? string.Empty;
-        var basedOn = element.Attribute("BasedOn")?.Value;
         state.Body.AppendLine(
-            $"        var {variable} = {Runtime}.CreateStyle(this, {Literal(key)}, {Literal(targetType)}, {Literal(basedOn)});");
+            $"        var {variable} = {Runtime}.CreateStyle(this, {Literal(element.ToString(SaveOptions.DisableFormatting))});");
         foreach (var setter in element.Descendants().Where(e => e.Name.LocalName == "EventSetter"))
         {
             var eventName = setter.Attribute("Event")?.Value;
@@ -253,17 +251,6 @@ public sealed class XamlHeadlessGenerator : IIncrementalGenerator
             {
                 state.Body.AppendLine(
                     $"        {Runtime}.AddStyleHandler(this, {variable}, {Literal(eventName.Split('.').Last())}, {HandlerLambda(method)});");
-            }
-        }
-
-        foreach (var setter in element.Elements().Where(e => e.Name.LocalName == "Setter"))
-        {
-            var property = setter.Attribute("Property")?.Value;
-            var value = setter.Attribute("Value")?.Value;
-            if (property is not null && value is not null)
-            {
-                state.Body.AppendLine(
-                    $"        {Runtime}.AddStyleSetter({variable}, {Literal(property)}, {Literal(value)});");
             }
         }
 

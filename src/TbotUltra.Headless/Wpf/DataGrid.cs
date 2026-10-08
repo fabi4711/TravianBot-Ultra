@@ -150,6 +150,10 @@ public sealed class DataGridColumnCollection : ObservableCollection<DataGridColu
     {
         item.DataGridOwner = _owner;
         base.InsertItem(index, item);
+        for (var i = 0; i < Count; i++)
+        {
+            this[i].DisplayIndex = i;
+        }
     }
 }
 

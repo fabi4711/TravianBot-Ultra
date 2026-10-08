@@ -54,6 +54,37 @@ public static class HeadlessTemplates
         return element;
     }
 
+    /// <summary>
+    /// The containers an items control shows: element items as-is, data items through their template
+    /// (or a text block), created once per item and kept until the item leaves the source.
+    /// </summary>
+    public static IReadOnlyList<FrameworkElement> RealizeItems(ItemsControl itemsControl, int max = int.MaxValue)
+    {
+        var result = new List<FrameworkElement>();
+        var keys = new List<object>();
+        foreach (var item in itemsControl.Items.Cast<object?>().Take(max))
+        {
+            switch (item)
+            {
+                case null:
+                    continue;
+                case FrameworkElement element:
+                    result.Add(element);
+                    continue;
+            }
+
+            keys.Add(item);
+            var template = itemsControl.ItemTemplate ?? itemsControl.TryFindResource(item.GetType()) as DataTemplate;
+            result.Add(Realize(itemsControl, item, template, item, () => new TextBlock
+            {
+                Text = HeadlessCollections.DisplayText(item, itemsControl.DisplayMemberPath),
+            }));
+        }
+
+        Prune(itemsControl, keys);
+        return result;
+    }
+
     /// <summary>Drops cached instances whose items left the source, so removed rows release their elements.</summary>
     public static void Prune(object owner, IEnumerable<object> liveKeys)
     {
@@ -108,6 +139,13 @@ public static class HeadlessTemplates
         if (localName.Contains('.', StringComparison.Ordinal))
         {
             var property = localName[(localName.LastIndexOf('.') + 1)..];
+            if (property == "Style" && parent is FrameworkElement styledParent &&
+                element.Elements().FirstOrDefault(child => child.Name.LocalName == "Style") is { } styleElement)
+            {
+                styledParent.Style = HeadlessStyles.Parse(styleElement, styledParent);
+                return null;
+            }
+
             if (property is "Triggers" or "Style" or "Template" or "Resources")
             {
                 return null;
@@ -128,7 +166,12 @@ public static class HeadlessTemplates
 
         if (TemplateElements.Contains(localName))
         {
-            var nested = localName == "DataTemplate" ? new DataTemplate() : (FrameworkTemplate)new ControlTemplate();
+            FrameworkTemplate nested = localName switch
+            {
+                "DataTemplate" or "HierarchicalDataTemplate" => new DataTemplate(),
+                "ItemsPanelTemplate" => new ItemsPanelTemplate(),
+                _ => new ControlTemplate(),
+            };
             HeadlessXaml.SetTemplateMarkup(nested, element.ToString(SaveOptions.DisableFormatting));
             var offset = context.Indexes[element];
             foreach (var (handlerIndex, eventName, handler) in context.Info.Handlers)

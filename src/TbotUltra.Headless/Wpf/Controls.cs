@@ -776,7 +776,19 @@ public class ListBox : Selector
 
 public class ListBoxItem : ContentControl
 {
-    public bool IsSelected { get => Get(false); set => Set(value); }
+    public bool IsSelected
+    {
+        get => Get(false);
+        set
+        {
+            if (Set(value) && value && HeadlessParent is Selector selector && !ReferenceEquals(selector.SelectedItem, this))
+            {
+                selector.SelectedItem = this;
+            }
+        }
+    }
+
+    internal void SetSelectedFromParent(bool value) => Set(value, nameof(IsSelected));
 }
 
 public class ListView : ListBox
@@ -1130,6 +1142,12 @@ public class ScrollViewer : ContentControl
     public void LineUp()
     {
     }
+
+    public static ScrollBarVisibility GetHorizontalScrollBarVisibility(DependencyObject element)
+        => element is ScrollViewer viewer ? viewer.HorizontalScrollBarVisibility : element.GetValue(HorizontalScrollBarVisibilityProperty) as ScrollBarVisibility? ?? ScrollBarVisibility.Disabled;
+
+    public static ScrollBarVisibility GetVerticalScrollBarVisibility(DependencyObject element)
+        => element is ScrollViewer viewer ? viewer.VerticalScrollBarVisibility : element.GetValue(VerticalScrollBarVisibilityProperty) as ScrollBarVisibility? ?? ScrollBarVisibility.Visible;
 
     public static void SetHorizontalScrollBarVisibility(DependencyObject element, ScrollBarVisibility value)
         => element.SetValue(HorizontalScrollBarVisibilityProperty, value);

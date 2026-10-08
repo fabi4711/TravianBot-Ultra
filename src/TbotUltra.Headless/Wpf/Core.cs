@@ -523,6 +523,14 @@ public class DependencyObject : DispatcherObject, INotifyPropertyChanged
 
     internal void MarkStyleValue(string name) => (_styleValues ??= new HashSet<string>(StringComparer.Ordinal)).Add(name);
 
+    internal void ClearStyleValue(string name)
+    {
+        if (_styleValues?.Remove(name) == true && _values.Remove(name))
+        {
+            RaisePropertyChanged(name);
+        }
+    }
+
     internal void SetNamedValue(string name, object? value)
     {
         _values[name] = value;
@@ -1035,6 +1043,11 @@ public abstract class SetterBase
 
 public class Setter : SetterBase
 {
+    /// <summary>The markup value, resolved per element (resources, enums) when the setter applies.</summary>
+    public string? HeadlessRawValue { get; set; }
+
+    public string? TargetName { get; set; }
+
     public Setter()
     {
     }
@@ -1082,10 +1095,35 @@ public class DataTrigger : TriggerBase
     public object? Value { get; set; }
 }
 
+public sealed class Condition
+{
+    public Data.BindingBase? Binding { get; set; }
+    public DependencyProperty? Property { get; set; }
+    public object? Value { get; set; }
+}
+
+public sealed class MultiDataTrigger : TriggerBase
+{
+    public Collection<Condition> Conditions { get; } = new();
+}
+
+public sealed class MultiTrigger : TriggerBase
+{
+    public Collection<Condition> Conditions { get; } = new();
+}
+
 public abstract class FrameworkTemplate
 {
     public FrameworkElementFactory? VisualTree { get; set; }
     public ResourceDictionary Resources { get; set; } = new();
+
+    /// <summary>Builds a new instance of the template's visual tree from its markup.</summary>
+    public DependencyObject? LoadContent() => Headless.HeadlessTemplates.Load(this);
+
+    public object? FindName(string name, FrameworkElement templatedParent)
+        => Headless.HeadlessXaml.Descendants(templatedParent)
+            .OfType<FrameworkElement>()
+            .FirstOrDefault(element => element.Name == name);
 
     public void Seal()
     {

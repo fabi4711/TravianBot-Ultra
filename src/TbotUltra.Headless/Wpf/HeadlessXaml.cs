@@ -209,19 +209,7 @@ public static class HeadlessXaml
         Attach(root, value, $"{typeName}#value", parent, parentProperty, key);
     }
 
-    public static Style CreateStyle(object root, string? key, string targetType, string? basedOn)
-    {
-        var style = new Style { HeadlessKey = key, HeadlessTargetTypeName = StripPrefix(targetType) };
-        if (basedOn is not null && MarkupParser.TryParse(basedOn, out var node) && node.Positional.FirstOrDefault() is string baseKey)
-        {
-            style.BasedOn = (root as FrameworkElement)?.TryFindResource(baseKey) as Style ?? HeadlessResources.Find(baseKey) as Style;
-        }
-
-        return style;
-    }
-
-    public static void AddStyleSetter(Style style, string property, string value)
-        => style.HeadlessSetters[StripPrefix(property)] = value;
+    public static Style CreateStyle(object root, string markup) => HeadlessStyles.Parse(markup, root);
 
     public static void AddStyleHandler(object root, Style style, string eventName, HeadlessHandler handler)
     {
@@ -507,48 +495,8 @@ public static class HeadlessXaml
         }
     }
 
-    // Simple setters only; templates, triggers and visual states are not modeled headless.
-    private static readonly HashSet<string> StyledProperties = new(StringComparer.Ordinal)
-    {
-        "Background", "Foreground", "BorderBrush", "BorderThickness", "Padding", "Margin", "FontSize", "FontWeight",
-        "FontStyle", "Width", "Height", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "CornerRadius", "Visibility",
-        "HorizontalAlignment", "VerticalAlignment", "HorizontalContentAlignment", "TextWrapping", "Opacity", "Cursor",
-    };
-
-    /// <summary>Applies an explicit style's plain setters to properties the markup did not set locally.</summary>
-    public static void ApplyStyleSetters(FrameworkElement element)
-    {
-        if (element.Style is not { } style)
-        {
-            return;
-        }
-
-        var chain = new List<Style>();
-        for (var current = style; current is not null && chain.Count < 8; current = current.BasedOn)
-        {
-            chain.Insert(0, current);
-        }
-
-        foreach (var (property, value) in chain.SelectMany(item => item.HeadlessSetters))
-        {
-            if (!StyledProperties.Contains(property) || element.HasNamedValue(property) || HeadlessBindings.GetBindings(element).ContainsKey(property))
-            {
-                continue;
-            }
-
-            object? resolved = value;
-            if (value.StartsWith('{') && MarkupParser.TryParse(value, out var node))
-            {
-                resolved = MarkupParser.Evaluate(node, element);
-            }
-
-            if (resolved is not null)
-            {
-                TrySetProperty(element, property, resolved);
-                element.MarkStyleValue(property);
-            }
-        }
-    }
+    /// <summary>Applies an element's explicit style: plain setters now, triggers as their inputs change.</summary>
+    public static void ApplyStyleSetters(FrameworkElement element) => HeadlessStyles.Attach(element);
 
     private static void ApplyStyleHandlers(HeadlessComponent component)
     {
@@ -643,6 +591,23 @@ public static class HeadlessXaml
         return children;
     }
 
+    /// <summary>
+    /// Children as WPF's visual tree would show them: the logical children plus realized item and content
+    /// templates, so code walking <c>VisualTreeHelper</c> finds elements generated from data.
+    /// </summary>
+    public static IReadOnlyList<DependencyObject> GetVisualChildren(DependencyObject parent)
+    {
+        switch (parent)
+        {
+            case ItemsControl itemsControl when itemsControl.Items.IsUsingItemsSource:
+                return HeadlessTemplates.RealizeItems(itemsControl);
+            case ContentControl { Content: { } content and not UIElement, ContentTemplate: { } template } contentControl:
+                return new[] { HeadlessTemplates.Realize(contentControl, content, template, content) };
+            default:
+                return GetLogicalChildren(parent);
+        }
+    }
+
     public static IEnumerable<DependencyObject> Descendants(DependencyObject root)
     {
         var stack = new Stack<DependencyObject>();
@@ -709,6 +674,7 @@ public static class HeadlessXaml
         else if (element is DependencyObject source)
         {
             HeadlessBindings.OnTargetPropertyChanged(source, property);
+            HeadlessStyles.OnPropertyChanged(source, property);
         }
     }
 

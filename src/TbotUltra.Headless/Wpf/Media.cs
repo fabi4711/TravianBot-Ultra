@@ -490,10 +490,10 @@ namespace System.Windows.Media
     {
         public static DependencyObject? GetParent(DependencyObject reference) => (reference as UIElement)?.HeadlessParent;
 
-        public static int GetChildrenCount(DependencyObject reference) => Headless.HeadlessXaml.GetLogicalChildren(reference).Count;
+        public static int GetChildrenCount(DependencyObject reference) => Headless.HeadlessXaml.GetVisualChildren(reference).Count;
 
         public static DependencyObject GetChild(DependencyObject reference, int childIndex)
-            => Headless.HeadlessXaml.GetLogicalChildren(reference)[childIndex];
+            => Headless.HeadlessXaml.GetVisualChildren(reference)[childIndex];
 
         public static Rect GetDescendantBounds(Visual reference) => default;
 

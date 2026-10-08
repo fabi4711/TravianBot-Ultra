@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Runs the desktop test suite on Linux against TbotUltra.Headless. Tests that need a real WPF
+    renderer (STA thread, Application.LoadComponent, visual layout) are excluded.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>TbotUltra.Desktop.Tests</RootNamespace>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS8600;CS8602;CS8604;CA1707;CA2007</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TbotUltra.Headless\TbotUltra.Headless.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\TbotUltra.Desktop.Tests\**\*.cs"
+             Exclude="..\TbotUltra.Desktop.Tests\WpfSmokeFixture.cs"
+             Link="DesktopTests\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

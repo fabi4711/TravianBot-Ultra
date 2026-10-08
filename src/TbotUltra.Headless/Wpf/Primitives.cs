@@ -9,8 +9,73 @@ public abstract class ButtonBase : ContentControl
 {
     public static readonly RoutedEvent ClickEvent = EventManager.RegisterRoutedEvent(nameof(Click), RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(ButtonBase));
 
-    public ICommand? Command { get => Get<ICommand?>(null); set => Set(value); }
-    public object? CommandParameter { get => Get<object?>(null); set => Set(value); }
+    private bool _canExecute = true;
+
+    public ICommand? Command
+    {
+        get => Get<ICommand?>(null);
+        set
+        {
+            var old = Command;
+            if (!Set(value))
+            {
+                return;
+            }
+
+            if (old is not null)
+            {
+                old.CanExecuteChanged -= OnCanExecuteChanged;
+            }
+
+            if (value is not null)
+            {
+                value.CanExecuteChanged += OnCanExecuteChanged;
+            }
+
+            UpdateCanExecute();
+        }
+    }
+
+    public object? CommandParameter
+    {
+        get => Get<object?>(null);
+        set
+        {
+            if (Set(value))
+            {
+                UpdateCanExecute();
+            }
+        }
+    }
+
+    /// <summary>Like WPF, a command that cannot execute disables its button.</summary>
+    public new bool IsEnabled
+    {
+        get => base.IsEnabled && _canExecute;
+        set => base.IsEnabled = value;
+    }
+
+    private void OnCanExecuteChanged(object? sender, EventArgs e)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            UpdateCanExecute();
+        }
+        else
+        {
+            Dispatcher.InvokeAsync(UpdateCanExecute);
+        }
+    }
+
+    private void UpdateCanExecute()
+    {
+        var canExecute = Command?.CanExecute(CommandParameter) ?? true;
+        if (canExecute != _canExecute)
+        {
+            _canExecute = canExecute;
+            RaisePropertyChanged(nameof(IsEnabled));
+        }
+    }
     public IInputElement? CommandTarget { get => Get<IInputElement?>(null); set => Set(value); }
     public ClickMode ClickMode { get => Get(ClickMode.Release); set => Set(value); }
     public bool IsPressed => false;
@@ -100,6 +165,9 @@ public abstract class Selector : ItemsControl
     public static readonly DependencyProperty SelectedValueProperty = DependencyProperty.Register(nameof(SelectedValue), typeof(object), typeof(Selector));
 
     private bool _changingSelection;
+    private int _pendingIndex = -1;
+    private object? _pendingValue;
+    private bool _hasPendingValue;
 
     public object? SelectedItem
     {
@@ -110,7 +178,12 @@ public abstract class Selector : ItemsControl
     public int SelectedIndex
     {
         get => SelectedItem is null ? -1 : Items.IndexOf(SelectedItem);
-        set => ChangeSelection(value >= 0 && value < Items.Count ? Items[value] : null);
+        set
+        {
+            // Markup sets SelectedIndex before the items exist; WPF applies it once they arrive.
+            _pendingIndex = value >= Items.Count ? value : -1;
+            ChangeSelection(value >= 0 && value < Items.Count ? Items[value] : null);
+        }
     }
 
     public string SelectedValuePath { get => Get(string.Empty); set => Set(value); }
@@ -130,6 +203,8 @@ public abstract class Selector : ItemsControl
                 }
             }
 
+            _hasPendingValue = match is null && value is not null;
+            _pendingValue = _hasPendingValue ? value : null;
             ChangeSelection(match);
         }
     }
@@ -142,6 +217,12 @@ public abstract class Selector : ItemsControl
 
     protected virtual void OnSelectedItemChanged(object? oldItem, object? newItem)
     {
+    }
+
+    private static void SyncContainerSelection(object? oldItem, object? newItem)
+    {
+        (oldItem as ListBoxItem)?.SetSelectedFromParent(false);
+        (newItem as ListBoxItem)?.SetSelectedFromParent(true);
     }
 
     protected override void OnItemsSourceChanged() => ValidateSelection();
@@ -165,6 +246,35 @@ public abstract class Selector : ItemsControl
         {
             ChangeSelection(null);
         }
+
+        if (SelectedItem is not null)
+        {
+            return;
+        }
+
+        if (_pendingIndex >= 0 && _pendingIndex < Items.Count)
+        {
+            var index = _pendingIndex;
+            _pendingIndex = -1;
+            ChangeSelection(Items[index]);
+        }
+        else if (_hasPendingValue)
+        {
+            var pending = _pendingValue;
+            foreach (var item in Items)
+            {
+                if (Equals(HeadlessCollections.GetPathValue(item, SelectedValuePath), pending))
+                {
+                    _hasPendingValue = false;
+                    ChangeSelection(item);
+                    break;
+                }
+            }
+        }
+        else if (Items.OfType<ListBoxItem>().FirstOrDefault(container => container.IsSelected) is { } preselected)
+        {
+            ChangeSelection(preselected);
+        }
     }
 
     private void ChangeSelection(object? item)
@@ -187,6 +297,7 @@ public abstract class Selector : ItemsControl
             Set(item, nameof(SelectedItem));
             RaisePropertyChanged(nameof(SelectedIndex));
             RaisePropertyChanged(nameof(SelectedValue));
+            SyncContainerSelection(old, item);
             OnSelectedItemChanged(old, item);
             Items.RaiseCurrentChanged();
         }
