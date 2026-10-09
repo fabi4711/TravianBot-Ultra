@@ -196,7 +196,7 @@ public abstract class Selector : ItemsControl
             object? match = null;
             foreach (var item in Items)
             {
-                if (Equals(HeadlessCollections.GetPathValue(item, SelectedValuePath), value))
+                if (SelectedValueMatches(HeadlessCollections.GetPathValue(item, SelectedValuePath), value))
                 {
                     match = item;
                     break;
@@ -208,6 +208,15 @@ public abstract class Selector : ItemsControl
             ChangeSelection(match);
         }
     }
+
+    // WPF converts between the item value and SelectedValue, so a string Tag "20" matches an int 20.
+    private static bool SelectedValueMatches(object? itemValue, object? value)
+        => Equals(itemValue, value)
+           || (itemValue is not null && value is not null && itemValue.GetType() != value.GetType()
+               && string.Equals(
+                   Convert.ToString(itemValue, System.Globalization.CultureInfo.InvariantCulture),
+                   Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture),
+                   StringComparison.Ordinal));
 
     public bool? IsSynchronizedWithCurrentItem { get => Get<bool?>(null); set => Set(value); }
 
@@ -263,7 +272,7 @@ public abstract class Selector : ItemsControl
             var pending = _pendingValue;
             foreach (var item in Items)
             {
-                if (Equals(HeadlessCollections.GetPathValue(item, SelectedValuePath), pending))
+                if (SelectedValueMatches(HeadlessCollections.GetPathValue(item, SelectedValuePath), pending))
                 {
                     _hasPendingValue = false;
                     ChangeSelection(item);

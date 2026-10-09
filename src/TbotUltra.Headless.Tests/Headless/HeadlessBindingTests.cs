@@ -34,4 +34,19 @@ public sealed class HeadlessBindingTests
             Assert.Equal(3, list.Items.Count);
         });
     }
+
+    [Fact]
+    public void SelectedValue_MatchesStringTagsAgainstNumericValues()
+    {
+        _wpf.Run(() =>
+        {
+            var combo = new ComboBox { SelectedValuePath = "Tag" };
+            combo.Items.Add(new ComboBoxItem { Content = "10 %", Tag = "10" });
+            combo.Items.Add(new ComboBoxItem { Content = "20 %", Tag = "20" });
+
+            combo.SelectedValue = 20;
+
+            Assert.Same(combo.Items[1], combo.SelectedItem);
+        });
+    }
 }
