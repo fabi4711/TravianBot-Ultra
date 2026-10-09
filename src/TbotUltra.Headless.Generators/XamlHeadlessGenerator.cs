@@ -99,6 +99,7 @@ public sealed class XamlHeadlessGenerator : IIncrementalGenerator
             state.Fields.AppendLine($"    internal {rootType} {rootName};");
             state.Body.AppendLine($"        {rootName} = this;");
             state.Body.AppendLine($"        {Runtime}.SetLiteral(this, \"Name\", {Literal(rootName)});");
+            state.Body.AppendLine($"        {Runtime}.RegisterName(this, {Literal(rootName)}, this);");
         }
 
         EmitAttributes(state, root, "this", CollectHandlers(state, root));

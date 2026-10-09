@@ -18,7 +18,7 @@ public sealed class BuildingsPanelHeadlessTests
     }
 
     // MainWindow resolves its view models from App.Services, which App.OnStartup builds.
-    private static void EnsureAppServices()
+    internal static void EnsureAppServices()
     {
         // A fresh data root seeded like a release download, so the test never touches repo config.
         var repoRoot = TbotUltra.Worker.ProjectRootLocator.FindProjectRoot(AppContext.BaseDirectory);
