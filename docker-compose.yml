@@ -3,7 +3,7 @@
 # instead (Portainer "Repository" stack), replace `image:` with `build: .`.
 services:
   tbot-ultra:
-    image: ghcr.io/fabianhardt/travianbot-ultra:latest
+    image: ghcr.io/fabi4711/travianbot-ultra:latest
     container_name: tbot-ultra
     restart: unless-stopped
     stop_grace_period: 45s           # lets the bot stop its browser and save state

@@ -22,7 +22,7 @@ The bot's browser still runs with a visible window (as on Windows) on a virtual 
 ## Portainer
 
 **Prebuilt image (recommended).** Every push to `main`/`linux-web` builds
-`ghcr.io/fabianhardt/travianbot-ultra:latest` (workflow `Docker image`). If the package is private,
+`ghcr.io/fabi4711/travianbot-ultra:latest` (workflow `Docker image`). If the package is private,
 add GHCR as a registry in Portainer (user: GitHub name, password: a token with `read:packages`)
 or make the package public under GitHub → Packages.
 
