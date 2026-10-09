@@ -34,6 +34,17 @@ or make the package public under GitHub → Packages.
 
 **Build on the host.** Stacks → Add stack → Repository, compose path `docker-compose.build.yml`.
 
+**Local build + own registry (`scripts/deploy.sh`).** For an arm64 host or a private registry: the
+script builds the image for `PLATFORM`, pushes `<version>` and `latest` to `REGISTRY` via `skopeo`
+(plain HTTP) and creates or updates the Portainer stack `deploy/docker-compose.portainer.yml` through
+the Portainer API (`PullImage=true`).
+
+1. `cp deploy/.env.deploy.example deploy/.env.deploy` and fill it in (git-ignored).
+2. The Portainer host's Docker daemon must list the registry under `insecure-registries`.
+3. `brew install skopeo jq`, then `scripts/deploy.sh`.
+
+The GHCR workflow builds amd64 only; Google Chrome (bonus videos) is likewise amd64 only.
+
 ## Environment
 
 | Variable | Default | Meaning |

@@ -21,7 +21,9 @@ if (!string.IsNullOrEmpty(password))
     app.Use(async (context, next) =>
     {
         var isLocalOpen = context.Request.Path == "/api/open" && context.Connection.RemoteIpAddress is { } remote && System.Net.IPAddress.IsLoopback(remote);
-        if (!isLocalOpen && context.Request.Headers.Authorization.ToString() != expected)
+        // The container healthcheck has no credentials.
+        var isHealth = context.Request.Path == "/health";
+        if (!isLocalOpen && !isHealth && context.Request.Headers.Authorization.ToString() != expected)
         {
             context.Response.Headers.WWWAuthenticate = "Basic realm=\"Tbot Ultra\", charset=\"UTF-8\"";
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;

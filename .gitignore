@@ -1,5 +1,6 @@
 # --- Secrets / accounts (never commit) ---
 .env
+deploy/.env.deploy
 config/accounts.json
 /config/accounts
 
