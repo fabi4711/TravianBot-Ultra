@@ -107,6 +107,20 @@ public static class HeadlessXaml
            ?? (element is DataGridColumn { DataGridOwner: { } owner } ? owner : null)
            ?? (InheritanceParents.TryGetValue(element, out var parent) ? parent : null);
 
+    /// <summary>Resource lookup from any object, following the inheritance context up to the application.</summary>
+    public static object? FindResource(object? scope, object key)
+    {
+        for (var current = scope; current is not null; current = GetParent(current))
+        {
+            if (current is FrameworkElement { ExistingResources: { } resources } && resources.Contains(key))
+            {
+                return resources[key];
+            }
+        }
+
+        return Application.Current?.TryFindResource(key);
+    }
+
     internal static object? InheritedDataContext(object? parent)
     {
         for (var current = parent; current is not null; current = GetParent(current))

@@ -199,6 +199,13 @@ namespace System.Windows.Data
         }
 
         public PropertyPath? Path { get; set; }
+
+        /// <summary>Resource key of a <c>Source={StaticResource …}</c> resolved when the binding applies.</summary>
+        public object? HeadlessSourceKey { get; set; }
+
+        /// <summary>Resource key of a <c>Converter={StaticResource …}</c> resolved when the binding applies.</summary>
+        public object? HeadlessConverterKey { get; set; }
+
         public BindingMode Mode { get; set; } = BindingMode.Default;
         public UpdateSourceTrigger UpdateSourceTrigger { get; set; }
         public IValueConverter? Converter { get; set; }

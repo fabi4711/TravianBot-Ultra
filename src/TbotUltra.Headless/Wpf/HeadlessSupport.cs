@@ -228,6 +228,11 @@ public static class MarkupParser
                     break;
                 case "Converter":
                     binding.Converter = Evaluate(value, target) as IValueConverter;
+                    if (binding.Converter is null && ResourceKey(value) is { } converterKey)
+                    {
+                        binding.HeadlessConverterKey = converterKey;
+                    }
+
                     break;
                 case "ConverterParameter":
                     binding.ConverterParameter = value is MarkupNode parameterNode ? Evaluate(parameterNode, target) : value;
@@ -246,6 +251,11 @@ public static class MarkupParser
                     break;
                 case "Source":
                     binding.Source = value is MarkupNode sourceNode ? Evaluate(sourceNode, target) : value;
+                    if (binding.Source is null && ResourceKey(value) is { } sourceKey)
+                    {
+                        binding.HeadlessSourceKey = sourceKey;
+                    }
+
                     break;
                 case "RelativeSource":
                     binding.RelativeSource = value as MarkupNode is { } relativeNode ? ToRelativeSource(relativeNode) : null;
@@ -255,6 +265,11 @@ public static class MarkupParser
 
         return binding;
     }
+
+    private static string? ResourceKey(object value)
+        => value is MarkupNode { Name: "StaticResource" or "DynamicResource" } node
+            ? node.Positional.FirstOrDefault() as string ?? node.Named.GetValueOrDefault("ResourceKey") as string
+            : null;
 
     private static RelativeSource ToRelativeSource(MarkupNode node)
     {

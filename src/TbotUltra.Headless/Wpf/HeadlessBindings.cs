@@ -105,7 +105,7 @@ public static class HeadlessBindings
         switch (binding)
         {
             case Binding single:
-                var source = single.Source ?? dataItem;
+                var source = single.Source is CollectionViewSource viewSource ? viewSource.View : single.Source ?? dataItem;
                 var raw = ResolvePath(source, single.Path?.Path, out _);
                 return Format(single, ConvertValue(single, raw, typeof(object)));
             case MultiBinding multi:
@@ -217,6 +217,20 @@ public static class HeadlessBindings
         return segments;
     }
 
+    /// <summary>Fills in Source/Converter resource references once the target sits in its tree.</summary>
+    private static void ResolveDeferredResources(DependencyObject target, Binding binding)
+    {
+        if (binding.Source is null && binding.HeadlessSourceKey is { } sourceKey)
+        {
+            binding.Source = HeadlessXaml.FindResource(target, sourceKey);
+        }
+
+        if (binding.Converter is null && binding.HeadlessConverterKey is { } converterKey)
+        {
+            binding.Converter = HeadlessXaml.FindResource(target, converterKey) as IValueConverter;
+        }
+    }
+
     private static object? ConvertValue(Binding binding, object? value, Type targetType)
         => binding.Converter is null
             ? value
@@ -303,6 +317,20 @@ public static class HeadlessBindings
             {
                 case Binding single:
                     var source = ResolveSource(target, single, out resolved);
+                    if (single.Source is CollectionViewSource viewSource)
+                    {
+                        // The view is replaced whenever the view source gets new data; follow it.
+                        PropertyChangedEventHandler viewChanged = (_, e) =>
+                        {
+                            if (e.PropertyName == nameof(CollectionViewSource.View))
+                            {
+                                Dispatch(Apply);
+                            }
+                        };
+                        viewSource.PropertyChanged += viewChanged;
+                        _subscriptions.Add((viewSource, viewChanged));
+                    }
+
                     value = resolved ? ResolveAndSubscribe(source, single.Path?.Path) : null;
                     if (resolved)
                     {
@@ -455,9 +483,19 @@ public static class HeadlessBindings
         private object? ResolveSource(DependencyObject target, Binding binding, out bool resolved)
         {
             resolved = true;
+            ResolveDeferredResources(target, binding);
+            if (binding.Source is null && binding.HeadlessSourceKey is not null)
+            {
+                resolved = false;
+                return null;
+            }
+
             if (binding.Source is not null)
             {
-                return binding.Source;
+                // As in WPF, binding to a CollectionViewSource binds to its view.
+                return binding.Source is CollectionViewSource viewSource && string.IsNullOrEmpty(binding.Path?.Path)
+                    ? viewSource.View
+                    : binding.Source;
             }
 
             if (!string.IsNullOrEmpty(binding.ElementName))
