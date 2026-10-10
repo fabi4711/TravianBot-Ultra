@@ -213,7 +213,9 @@
                                                 <ComboBox Grid.Column="1"
                                                           Style="{StaticResource TroopSettingsComboBoxStyle}"
                                                           ItemsSource="{Binding Barracks.TroopOptions}"
-                                                          SelectedItem="{Binding Barracks.SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                          IsEditable="True"
+                                                          IsReadOnly="True"
+                                                          Text="{Binding Barracks.SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                             </Grid>
 
                                             <Grid Grid.Column="3"
@@ -232,7 +234,9 @@
                                                 <ComboBox Grid.Column="1"
                                                           Style="{StaticResource TroopSettingsComboBoxStyle}"
                                                           ItemsSource="{Binding Stable.TroopOptions}"
-                                                          SelectedItem="{Binding Stable.SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                          IsEditable="True"
+                                                          IsReadOnly="True"
+                                                          Text="{Binding Stable.SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                             </Grid>
 
                                             <Grid Grid.Column="4"
@@ -250,7 +254,9 @@
                                                 <ComboBox Grid.Column="1"
                                                           Style="{StaticResource TroopSettingsComboBoxStyle}"
                                                           ItemsSource="{Binding Workshop.TroopOptions}"
-                                                          SelectedItem="{Binding Workshop.SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                          IsEditable="True"
+                                                          IsReadOnly="True"
+                                                          Text="{Binding Workshop.SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                             </Grid>
 
                                             <ToggleButton Grid.Column="5"

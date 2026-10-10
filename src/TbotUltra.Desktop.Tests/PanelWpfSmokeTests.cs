@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Media;
 using TbotUltra.Desktop.ViewModels;
+using TbotUltra.Desktop;
 using TbotUltra.Desktop.Views;
 using Xunit;
 
@@ -86,6 +87,114 @@ public sealed class PanelWpfSmokeTests
         });
     }
 
+    [Fact]
+    public void TroopsPanel_ShowsSavedTroopOutsideCurrentCatalogWithoutSelectingAnother()
+    {
+        _wpf.Run(() =>
+        {
+            var viewModel = new TroopTrainingViewModel();
+            viewModel.Initialize();
+            viewModel.UpdateTroopOptions("Romans");
+            viewModel.Buildings[0].SelectedTroop = "Praetorian";
+            var panel = new TroopsPanel { DataContext = viewModel };
+            Layout(panel);
+
+            viewModel.UpdateTroopOptions("Gauls");
+            Layout(panel);
+            var troopCombo = Assert.Single(FindComboBoxes(panel),
+                combo => ReferenceEquals(combo.ItemsSource, viewModel.Buildings[0].TroopOptions));
+
+            Assert.Equal("Praetorian", troopCombo.Text);
+            Assert.Equal("Praetorian", viewModel.Buildings[0].SelectedTroop);
+            Assert.DoesNotContain("Praetorian", troopCombo.Items.Cast<string>());
+
+            troopCombo.SelectedItem = "Phalanx";
+            Assert.Equal("Phalanx", viewModel.Buildings[0].SelectedTroop);
+        });
+    }
+
+    [Fact]
+    public void TroopsPanel_VillageSwitchLoadsEachSavedTroopBeforeRefreshingCatalog()
+    {
+        _wpf.Run(() =>
+        {
+            var viewModel = new TroopTrainingViewModel();
+            viewModel.Initialize();
+            viewModel.UpdateTroopOptions("Romans");
+            viewModel.Buildings[0].SelectedTroop = "Praetorian";
+            viewModel.Buildings[1].SelectedTroop = "Equites Imperatoris";
+            viewModel.Buildings[2].SelectedTroop = "Fire Catapult";
+            var firstVillage = viewModel.BuildVillageTrainingPayload();
+            var secondVillage = firstVillage with
+            {
+                Barracks = firstVillage.Barracks with { TroopType = "Swordsman" },
+                Stable = firstVillage.Stable with { TroopType = "Druidrider" },
+                Workshop = firstVillage.Workshop with { TroopType = "Trebuchet" },
+            };
+            var panel = new TroopsPanel { DataContext = viewModel };
+            Layout(panel);
+
+            viewModel.ApplyVillageTrainingPayload(secondVillage);
+            viewModel.UpdateTroopOptions("Gauls");
+            Layout(panel);
+
+            foreach (var (option, saved) in new[]
+            {
+                (viewModel.Buildings[0], "Swordsman"),
+                (viewModel.Buildings[1], "Druidrider"),
+                (viewModel.Buildings[2], "Trebuchet"),
+            })
+            {
+                var combo = Assert.Single(FindComboBoxes(panel),
+                    item => ReferenceEquals(item.ItemsSource, option.TroopOptions));
+                Assert.Equal(saved, combo.Text);
+                Assert.Equal(saved, option.SelectedTroop);
+                Assert.Contains(saved, combo.Items.Cast<string>());
+            }
+
+            Assert.Equal("Swordsman", viewModel.BuildVillageTrainingPayload().Barracks.TroopType);
+            Assert.Equal("Druidrider", viewModel.BuildVillageTrainingPayload().Stable.TroopType);
+            Assert.Equal("Trebuchet", viewModel.BuildVillageTrainingPayload().Workshop.TroopType);
+        });
+    }
+
+    [Fact]
+    public void TroopSettingsWindow_ShowsSavedSelectionsWithoutOfferingWrongTribeTroops()
+    {
+        _wpf.Run(() =>
+        {
+            var viewModel = new TroopTrainingViewModel();
+            viewModel.Initialize();
+            viewModel.Buildings[0].SelectedTroop = "Clubswinger";
+            viewModel.Buildings[1].SelectedTroop = "Paladin";
+            viewModel.Buildings[2].SelectedTroop = "Catapult";
+            var row = new TroopTrainingQuickVillageRow(
+                "v1", "Village 1", true, viewModel.BuildVillageTrainingPayload(), "Romans");
+            var window = new TroopTrainingOptionsWindow([row]);
+            var content = Assert.IsAssignableFrom<FrameworkElement>(window.Content);
+            content.Measure(new Size(980, 600));
+            content.Arrange(new Rect(0, 0, 980, 600));
+            content.UpdateLayout();
+
+            foreach (var (option, saved) in new[]
+            {
+                (row.Barracks, "Clubswinger"),
+                (row.Stable, "Paladin"),
+                (row.Workshop, "Catapult"),
+            })
+            {
+                var combo = Assert.Single(FindComboBoxes(content),
+                    item => ReferenceEquals(item.ItemsSource, option.TroopOptions));
+                Assert.Equal(saved, combo.Text);
+                Assert.DoesNotContain(saved, combo.Items.Cast<string>());
+            }
+
+            Assert.Equal("Clubswinger", row.BuildPayload().Barracks.TroopType);
+            Assert.Equal("Paladin", row.BuildPayload().Stable.TroopType);
+            Assert.Equal("Catapult", row.BuildPayload().Workshop.TroopType);
+        });
+    }
+
     private static void AssertPanelCommands(UserControl panel, object viewModel, params string[] buttonNames)
     {
         panel.DataContext = viewModel;
@@ -118,6 +227,23 @@ public sealed class PanelWpfSmokeTests
             }
 
             foreach (var nested in FindButtons(child))
+            {
+                yield return nested;
+            }
+        }
+    }
+
+    private static IEnumerable<ComboBox> FindComboBoxes(DependencyObject root)
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var child = VisualTreeHelper.GetChild(root, index);
+            if (child is ComboBox comboBox)
+            {
+                yield return comboBox;
+            }
+
+            foreach (var nested in FindComboBoxes(child))
             {
                 yield return nested;
             }

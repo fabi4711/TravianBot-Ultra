@@ -526,7 +526,9 @@
                                             <ComboBox Grid.Column="1"
                                                       Margin="8,0,8,0"
                                                       ItemsSource="{Binding TroopOptions}"
-                                                      SelectedItem="{Binding SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      IsEditable="True"
+                                                      IsReadOnly="True"
+                                                      Text="{Binding SelectedTroop, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                       Width="120"
                                                       HorizontalAlignment="Left"
                                                       HorizontalContentAlignment="Left" />

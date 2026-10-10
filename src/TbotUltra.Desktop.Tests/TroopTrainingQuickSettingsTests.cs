@@ -39,6 +39,8 @@ public sealed class TroopTrainingQuickSettingsTests
         Assert.Equal("Paladin", row.Stable.SelectedTroop);
         Assert.Equal("Ram", row.Workshop.SelectedTroop);
         Assert.Equal(source, row.BuildPayload());
+        Assert.DoesNotContain("Clubswinger", row.Barracks.TroopOptions);
+        Assert.DoesNotContain("Paladin", row.Stable.TroopOptions);
     }
 
     [Fact]
@@ -179,8 +181,9 @@ public sealed class TroopTrainingQuickSettingsTests
         var row = new TroopTrainingQuickVillageRow("unknown", "Unscanned", true, BuildSourcePayload(), "Unknown");
 
         Assert.False(row.IsBuildTroopsEnabled);
-        Assert.Equal(["Clubswinger"], row.Barracks.TroopOptions);
-        Assert.Equal(["Paladin"], row.Stable.TroopOptions);
-        Assert.Equal(["Ram"], row.Workshop.TroopOptions);
+        Assert.Empty(row.Barracks.TroopOptions);
+        Assert.Empty(row.Stable.TroopOptions);
+        Assert.Empty(row.Workshop.TroopOptions);
+        Assert.Equal(BuildSourcePayload(), row.BuildPayload());
     }
 }

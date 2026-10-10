@@ -479,14 +479,11 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
 
     /// <summary>
     /// Refreshes each row's <c>TroopOptions</c> dropdown based on the
-    /// player's tribe. Returns <c>true</c> when the previously selected
-    /// troop is empty and a display default was applied. A non-empty selection
-    /// is never replaced by a tribe/status refresh; execution validates it
-    /// against the actual village before training.
+    /// player's tribe. A non-empty selection is never replaced by a tribe/status
+    /// refresh; execution validates it against the actual village before training.
     /// </summary>
-    public bool UpdateTroopOptions(string? tribe)
+    public void UpdateTroopOptions(string? tribe)
     {
-        var configChanged = false;
         _isConfigSuppressed = true;
         try
         {
@@ -506,19 +503,13 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
                 }
                 else if (!string.IsNullOrWhiteSpace(currentSelection))
                 {
-                    // Keep the saved value selectable while the village tribe is being resolved.
-                    // Replacing it here could persist the first troop of a transiently wrong tribe.
-                    option.TroopOptions.Add(currentSelection);
+                    // Keep the saved value in the read-only ComboBox text, but not in the
+                    // tribe/building-specific list of trainable choices.
                     option.SelectedTroop = currentSelection;
                 }
                 else
                 {
                     var fallbackTroop = resolvedTroops.FirstOrDefault() ?? string.Empty;
-                    if (!string.Equals(option.SelectedTroop, fallbackTroop, StringComparison.Ordinal))
-                    {
-                        configChanged = true;
-                    }
-
                     option.SelectedTroop = fallbackTroop;
                 }
             }
@@ -528,7 +519,6 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
             _isConfigSuppressed = false;
         }
 
-        return configChanged;
     }
 
     private void OnOptionPropertyChanged(object? sender, PropertyChangedEventArgs e)

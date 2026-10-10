@@ -1446,7 +1446,6 @@ public partial class MainWindow
         _buildingsViewModel.ClearQueuedItemState();
 
         LoadResourceUpgradeTypesForSelectedVillage(selected);
-        ApplySelectedVillageTribeFromCache(selected);
         var hasCachedStatus = TryGetCachedVillageStatus(selected, out var cached);
         if (hasCachedStatus)
         {
@@ -1483,6 +1482,7 @@ public partial class MainWindow
         ApplyAutomationLoopGroupsForSelectedVillage();
         // Load this village's troop-training override into the Troops tab so it tracks the selection.
         ApplyTroopTrainingForSelectedVillage();
+        ApplySelectedVillageTribeFromCache(selected);
         ApplyConstructionTimerFromStatus(hasCachedStatus ? cached : null);
         // Light up Switch village when the selected village differs from the one the bot works in.
         UpdateSwitchVillageButtonHighlight();

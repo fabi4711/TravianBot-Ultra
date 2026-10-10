@@ -19,7 +19,7 @@ public sealed class TroopTrainingViewModelTests
         vm.UpdateTroopOptions("Gauls");
 
         Assert.Equal("Praetorian", vm.Buildings[0].SelectedTroop);
-        Assert.Contains("Praetorian", vm.Buildings[0].TroopOptions);
+        Assert.DoesNotContain("Praetorian", vm.Buildings[0].TroopOptions);
     }
 
     [Fact]
