@@ -163,7 +163,8 @@ select.input { padding-right: 20px; }
 .grid-table tbody tr:hover td { background: #151b26; }
 
 .expander { border: 1px solid var(--border); border-radius: 6px; }
-.expander-head { padding: 4px 8px; cursor: pointer; user-select: none; }
+.expander-head { padding: 4px 8px; cursor: pointer; user-select: none; display: flex; align-items: center; }
+.expander-title { min-width: 0; }
 .expander-body { padding: 4px 8px; }
 
 /* ---- windows ----------------------------------------------------------------------------- */

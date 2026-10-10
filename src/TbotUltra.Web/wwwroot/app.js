@@ -286,7 +286,14 @@
       case 'expander': {
         const box = el('div', 'expander');
         box._head = el('div', 'expander-head');
-        box._head.onclick = () => send({ e: 'expand', i: node.i });
+        box._arrow = el('span', 'expander-arrow');
+        box._title = el('div', 'expander-title');
+        box._head.append(box._arrow, box._title);
+        // An element header holds its own controls (toggles, buttons); only the arrow expands it then.
+        box._head.onclick = (event) => {
+          if (box._elementHeader && !box._arrow.contains(event.target)) return;
+          send({ e: 'expand', i: node.i });
+        };
         box._body = el('div', 'expander-body');
         box.append(box._head, box._body);
         return box;
@@ -397,7 +404,10 @@
         setChildren(element, (node.c || []).map(render).filter(Boolean));
         break;
       case 'expander':
-        element._head.textContent = (node.open ? '▾ ' : '▸ ') + (node.hdr || '');
+        element._arrow.textContent = node.open ? '▾ ' : '▸ ';
+        element._elementHeader = !!node.h;
+        if (node.h) setChildren(element._title, [render(node.h)].filter(Boolean));
+        else element._title.textContent = node.hdr || '';
         setChildren(element._body, node.c ? [render(node.c)].filter(Boolean) : []);
         break;
       case 'progress': {

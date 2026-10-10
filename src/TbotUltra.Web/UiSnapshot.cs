@@ -267,6 +267,11 @@ public sealed class UiSnapshot
             case Expander expander:
                 node["k"] = "expander";
                 node["hdr"] = TextOf(expander.Header);
+                if (expander.Header is UIElement header)
+                {
+                    node["h"] = Node(header);
+                }
+
                 node["open"] = expander.IsExpanded;
                 node["c"] = expander.IsExpanded ? Node(expander.Content) : null;
                 break;
