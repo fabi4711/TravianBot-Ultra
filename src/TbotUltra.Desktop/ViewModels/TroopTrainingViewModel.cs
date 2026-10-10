@@ -480,9 +480,9 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
     /// <summary>
     /// Refreshes each row's <c>TroopOptions</c> dropdown based on the
     /// player's tribe. Returns <c>true</c> when the previously selected
-    /// troop is no longer available for any row and a fallback was applied —
-    /// the caller should persist in that case so the new selection survives
-    /// across restarts.
+    /// troop is empty and a display default was applied. A non-empty selection
+    /// is never replaced by a tribe/status refresh; execution validates it
+    /// against the actual village before training.
     /// </summary>
     public bool UpdateTroopOptions(string? tribe)
     {
@@ -503,6 +503,13 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
                 if (resolvedTroops.Contains(currentSelection, StringComparer.OrdinalIgnoreCase))
                 {
                     option.SelectedTroop = resolvedTroops.First(item => string.Equals(item, currentSelection, StringComparison.OrdinalIgnoreCase));
+                }
+                else if (!string.IsNullOrWhiteSpace(currentSelection))
+                {
+                    // Keep the saved value selectable while the village tribe is being resolved.
+                    // Replacing it here could persist the first troop of a transiently wrong tribe.
+                    option.TroopOptions.Add(currentSelection);
+                    option.SelectedTroop = currentSelection;
                 }
                 else
                 {

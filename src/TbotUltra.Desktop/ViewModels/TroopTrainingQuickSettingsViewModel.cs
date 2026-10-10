@@ -199,8 +199,14 @@ public sealed class TroopTrainingQuickVillageRow : BaseViewModel
 
         cell.IsEnabled = building.Enabled;
         cell.SelectedTroop = building.TroopType;
-        if (cell.TroopOptions.Count > 0
+        if (!string.IsNullOrWhiteSpace(cell.SelectedTroop)
             && !cell.TroopOptions.Any(item => string.Equals(item, cell.SelectedTroop, StringComparison.OrdinalIgnoreCase)))
+        {
+            // Preserve the saved choice if the tribe is not yet known or was read incorrectly.
+            // The worker validates troop/building compatibility before training.
+            cell.TroopOptions.Add(cell.SelectedTroop);
+        }
+        else if (string.IsNullOrWhiteSpace(cell.SelectedTroop) && cell.TroopOptions.Count > 0)
         {
             cell.SelectedTroop = cell.TroopOptions[0];
         }

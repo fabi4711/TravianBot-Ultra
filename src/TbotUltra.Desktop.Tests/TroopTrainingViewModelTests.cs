@@ -9,6 +9,20 @@ namespace TbotUltra.Desktop.Tests;
 public sealed class TroopTrainingViewModelTests
 {
     [Fact]
+    public void TribeRefresh_DoesNotReplaceASavedTroopSelection()
+    {
+        var vm = new TroopTrainingViewModel();
+        vm.Initialize();
+        vm.UpdateTroopOptions("Romans");
+        vm.Buildings[0].SelectedTroop = "Praetorian";
+
+        vm.UpdateTroopOptions("Gauls");
+
+        Assert.Equal("Praetorian", vm.Buildings[0].SelectedTroop);
+        Assert.Contains("Praetorian", vm.Buildings[0].TroopOptions);
+    }
+
+    [Fact]
     public void ResetRuntimeState_ClearsPreviousAccountQueuesAndBrewery()
     {
         var vm = new TroopTrainingViewModel();

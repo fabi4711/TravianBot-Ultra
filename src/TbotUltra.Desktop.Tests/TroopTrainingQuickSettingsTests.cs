@@ -30,6 +30,18 @@ public sealed class TroopTrainingQuickSettingsTests
     }
 
     [Fact]
+    public void OpeningSettingsWithAStaleTribe_DoesNotChangeSavedTroops()
+    {
+        var source = BuildSourcePayload();
+        var row = new TroopTrainingQuickVillageRow("v1", "Village 1", true, source, "Romans");
+
+        Assert.Equal("Clubswinger", row.Barracks.SelectedTroop);
+        Assert.Equal("Paladin", row.Stable.SelectedTroop);
+        Assert.Equal("Ram", row.Workshop.SelectedTroop);
+        Assert.Equal(source, row.BuildPayload());
+    }
+
+    [Fact]
     public void BuildPayload_AppliesAllEditedSettings()
     {
         var source = BuildSourcePayload();
@@ -162,13 +174,13 @@ public sealed class TroopTrainingQuickSettingsTests
     }
 
     [Fact]
-    public void UnknownVillageTribe_DisablesTrainingWithoutGenericFallbackTroops()
+    public void UnknownVillageTribe_DisablesTrainingAndKeepsSavedTroopsWithoutGenericFallback()
     {
         var row = new TroopTrainingQuickVillageRow("unknown", "Unscanned", true, BuildSourcePayload(), "Unknown");
 
         Assert.False(row.IsBuildTroopsEnabled);
-        Assert.Empty(row.Barracks.TroopOptions);
-        Assert.Empty(row.Stable.TroopOptions);
-        Assert.Empty(row.Workshop.TroopOptions);
+        Assert.Equal(["Clubswinger"], row.Barracks.TroopOptions);
+        Assert.Equal(["Paladin"], row.Stable.TroopOptions);
+        Assert.Equal(["Ram"], row.Workshop.TroopOptions);
     }
 }
