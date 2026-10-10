@@ -14,6 +14,7 @@ namespace TbotUltra.Web;
 public sealed class DesktopHost : IHostedService
 {
     private readonly IHostApplicationLifetime _lifetime;
+    private static readonly TimeSpan AutoStartDelay = TimeSpan.FromSeconds(15);
     private readonly ILogger<DesktopHost> _logger;
 
     public DesktopHost(IHostApplicationLifetime lifetime, ILogger<DesktopHost> logger)
@@ -47,8 +48,35 @@ public sealed class DesktopHost : IHostedService
             app.MainWindow = MainWindow;
             MainWindow.Show();
             _logger.LogInformation("Desktop main window is running headless.");
+            if (string.Equals(Environment.GetEnvironmentVariable("TBOT_AUTOSTART"), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                ScheduleAutoStart(MainWindow);
+            }
         }).Task;
     }
+
+    private void ScheduleAutoStart(MainWindow window)
+    {
+        _logger.LogInformation("TBOT_AUTOSTART is set: logging in and starting the bot in {Delay}.", AutoStartDelay);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                // Give the window time to load the saved account and settings first.
+                await Task.Delay(AutoStartDelay, _lifetime.ApplicationStopping);
+                var start = await Dispatcher.Main.InvokeAsync(() => window.AutoStartAsync()).Task;
+                await start;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Auto-start failed.");
+            }
+        });
+    }
+
 
     /// <summary>
     /// Closes open dialogs, then the main window, and waits for the app's own shutdown (stopping the

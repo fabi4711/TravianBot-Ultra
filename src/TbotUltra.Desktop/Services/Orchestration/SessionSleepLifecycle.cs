@@ -394,6 +394,9 @@ internal sealed class SessionSleepLifecycle
 
     internal void PrepareExplicitWakeLogin() => _snapshot = new SleepSnapshot(true, false, false);
 
+    // An unattended start that landed in planned sleep should run the bot once the sleep ends.
+    internal void PrepareAutoStartWake() => _snapshot = new SleepSnapshot(true, true, false);
+
     internal void Reset()
     {
         _snapshot = SleepSnapshot.Idle;

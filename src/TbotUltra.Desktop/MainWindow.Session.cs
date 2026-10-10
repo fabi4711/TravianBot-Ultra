@@ -26,6 +26,42 @@ public partial class MainWindow
     private async void LoginButton_Click(object sender, RoutedEventArgs e)
         => await GuardUiAsync(() => ExecuteLoginFlowAsync());
 
+    /// <summary>
+    /// Unattended start (e.g. after a container restart): logs in the selected account and starts the
+    /// bot. Inside a planned sleep window the login turns into sleep, and the bot starts when it ends.
+    /// </summary>
+    public async Task AutoStartAsync(int maxAttempts = 3, TimeSpan? retryDelay = null)
+    {
+        var delay = retryDelay ?? TimeSpan.FromMinutes(2);
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            AppendLog($"[autostart] attempt {attempt}/{maxAttempts}: logging in and starting the bot.");
+            await GuardUiAsync(() => ExecuteLoginFlowAsync());
+
+            if (_isLoggedIn)
+            {
+                StartLoopButton_Click(this, new RoutedEventArgs());
+                AppendLog("[autostart] bot started.");
+                return;
+            }
+
+            if (IsSessionSleeping)
+            {
+                _sessionSleepLifecycle.PrepareAutoStartWake();
+                AppendLog("[autostart] planned sleep is active — the bot starts when the sleep ends.");
+                return;
+            }
+
+            if (attempt < maxAttempts)
+            {
+                AppendLog($"[autostart] login did not complete; retrying in {delay.TotalMinutes:F0} min.");
+                await Task.Delay(delay);
+            }
+        }
+
+        AppendLog("[autostart] giving up: login did not complete. Start the bot manually.");
+    }
+
     // Login function as the button is clicked
     private async Task ExecuteLoginFlowAsync(
         bool forceNewAccountAnalysis = false,

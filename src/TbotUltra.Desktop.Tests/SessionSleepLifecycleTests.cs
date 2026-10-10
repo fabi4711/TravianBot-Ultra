@@ -114,6 +114,22 @@ public sealed class SessionSleepLifecycleTests
     }
 
     [Fact]
+    public async Task Wake_AfterAutoStartLandedInSleep_StartsTheContinuousLoop()
+    {
+        var pacer = new SessionPacer(() => Now);
+        var port = new InMemorySleepPort { State = DefaultState() };
+        port.LoginResults.Enqueue(true);
+        var lifecycle = CreateLifecycle(pacer, port);
+        await lifecycle.RequestManualSleepAsync();
+        lifecycle.PrepareAutoStartWake();
+        pacer.WakeNow();
+
+        await lifecycle.WakeAsync();
+
+        Assert.Contains("resume-continuous", port.Trace);
+    }
+
+    [Fact]
     public async Task Wake_RestoresTheCapturedAutoQueueWithoutStartingContinuousLoop()
     {
         var pacer = new SessionPacer(() => Now);

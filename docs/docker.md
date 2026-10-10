@@ -56,6 +56,7 @@ The GHCR workflow builds amd64 only; Google Chrome (bonus videos) is likewise am
 | `SCREEN_RESOLUTION` | `1600x900x24` | Virtual display size. |
 | `TBOT_VNC_URL` | `http://{host}:6080/vnc.html?autoconnect=1&resize=scale` | Target of the "Browser" link in the web UI; change it when port 6080 is mapped differently or proxied. `{host}` is the host name the UI was opened with. |
 | `TZ` | `Europe/Berlin` | Time zone (pacing and sleep schedules use local time). |
+| `TBOT_AUTOSTART` | `false` | `true` logs in the selected account and starts the bot after the app starts (container restart, redeploy). Inside the session-pacing off-hours it sleeps and starts when they end. |
 | `TBOT_PROJECT_ROOT` | `/data` | Data folder (config, `.env`, logs). |
 
 ## Notes
