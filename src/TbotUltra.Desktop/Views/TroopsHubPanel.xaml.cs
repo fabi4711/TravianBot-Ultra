@@ -13,6 +13,7 @@ public partial class TroopsHubPanel : UserControl
     internal CheckBox IncomingAttackSoundAlert => IncomingAttacksContent.IncomingAttackSoundAlert;
     internal ComboBox IncomingAttackSoundCooldown => IncomingAttacksContent.IncomingAttackSoundCooldown;
     internal TroopEvasionPanel EvasionPanel => EvasionContent;
+    internal ExpansionPanel ExpansionPanel => ExpansionContent;
 
     internal void SelectIncomingAttacks()
     {

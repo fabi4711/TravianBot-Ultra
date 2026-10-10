@@ -88,3 +88,37 @@ public sealed class ExpansionCalculatorTests
     private static IReadOnlyDictionary<string, long> Resources(long clay = 750)
         => new Dictionary<string, long> { ["wood"] = 750, ["clay"] = clay, ["iron"] = 750, ["crop"] = 750 };
 }
+
+public sealed class ExpansionWorkerHelperTests
+{
+    [Theory]
+    [InlineData("xy:-133|132", -133, 132)]
+    [InlineData("(-133|132)", -133, 132)]
+    [InlineData("-133/132", -133, 132)]
+    public void TryParseFoundingTarget_ReadsCoordinates(string value, int x, int y)
+    {
+        Assert.True(TbotUltra.Worker.Services.BotTaskRunner.TryParseFoundingTarget(value, out var parsedX, out var parsedY));
+        Assert.Equal((x, y), (parsedX, parsedY));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Residence")]
+    public void TryParseFoundingTarget_RejectsOtherValues(string value)
+    {
+        Assert.False(TbotUltra.Worker.Services.BotTaskRunner.TryParseFoundingTarget(value, out _, out _));
+    }
+
+    [Fact]
+    public void CountSettlersInQueue_SumsSettlerRows()
+    {
+        var queue = new[]
+        {
+            new TbotUltra.Worker.Domain.BuildQueueItem("2 Settlers", "0:10:00"),
+            new TbotUltra.Worker.Domain.BuildQueueItem("1 Settler", "0:20:00"),
+            new TbotUltra.Worker.Domain.BuildQueueItem("5 Clubswingers", "0:05:00"),
+        };
+
+        Assert.Equal(3, TbotUltra.Worker.Services.TravianClient.CountSettlersInQueue(queue));
+    }
+}
