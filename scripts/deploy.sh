@@ -27,7 +27,7 @@ else
   exit 1
 fi
 
-for var in REGISTRY PORTAINER_URL PORTAINER_API_KEY PORTAINER_ENDPOINT_ID TBOT_WEB_PASSWORD VNC_PASSWORD; do
+for var in REGISTRY PORTAINER_URL PORTAINER_API_KEY PORTAINER_ENDPOINT_ID TBOT_WEB_PASSWORD; do
   if [ -z "${!var:-}" ]; then
     echo "✗ Missing variable: $var (set it in deploy/.env.deploy)" >&2
     exit 1

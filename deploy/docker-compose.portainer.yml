@@ -10,7 +10,7 @@ services:
       - "${VNC_PORT:-6080}:6080"
     environment:
       TBOT_WEB_PASSWORD: ${TBOT_WEB_PASSWORD:?set TBOT_WEB_PASSWORD}
-      VNC_PASSWORD: ${VNC_PASSWORD:?set VNC_PASSWORD}
+      VNC_PASSWORD: ${VNC_PASSWORD:-}
       TBOT_VNC_URL: "http://{host}:${VNC_PORT:-6080}/vnc.html?autoconnect=1&resize=scale"
       TZ: ${TZ:-Europe/Berlin}
       TBOT_AUTOSTART: "true"
