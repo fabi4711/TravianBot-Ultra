@@ -28,7 +28,18 @@
           <TextBlock Text="X" VerticalAlignment="Center" />
           <TextBox x:Name="FoundXTextBox" Width="70" Margin="6,0,12,0" />
           <TextBlock Text="Y" VerticalAlignment="Center" />
-          <TextBox x:Name="FoundYTextBox" Width="70" Margin="6,0,20,0" />
+          <TextBox x:Name="FoundYTextBox" Width="70" Margin="6,0,12,0" />
+          <TextBlock Text="Tribe" VerticalAlignment="Center" />
+          <ComboBox x:Name="FoundTribeComboBox" Width="130" Margin="6,0,20,0" SelectedIndex="0"
+                    ToolTip="Asked by the game only for the account's first three foundings.">
+            <ComboBoxItem Content="Own tribe" Tag="" />
+            <ComboBoxItem Content="Romans" Tag="1" />
+            <ComboBoxItem Content="Teutons" Tag="2" />
+            <ComboBoxItem Content="Gauls" Tag="3" />
+            <ComboBoxItem Content="Egyptians" Tag="6" />
+            <ComboBoxItem Content="Huns" Tag="7" />
+            <ComboBoxItem Content="Spartans" Tag="8" />
+          </ComboBox>
           <Button x:Name="FoundVillageButton" Content="Queue founding" Click="FoundVillage_Click" />
         </StackPanel>
         <TextBlock x:Name="ExpansionStatusText" Margin="0,8,0,0" Foreground="{DynamicResource TextMutedBrush}" />
