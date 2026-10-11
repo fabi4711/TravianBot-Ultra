@@ -116,4 +116,48 @@ fi
 
 HOST="${PORTAINER_URL#*://}"
 HOST="${HOST%%[:/]*}"
+
+# Portainer can return before compose finishes the recreate: when the old container needs the whole
+# stop_grace_period and gets killed, the new one is left in "created" under a temporary name.
+CONTAINER_NAME="${CONTAINER_NAME:-tbot-ultra}"
+DOCKER_API="$PORTAINER_URL/api/endpoints/$PORTAINER_ENDPOINT_ID/docker"
+echo "Verifying container $CONTAINER_NAME runs $VERSION…"
+started=""
+for attempt in $(seq 1 30); do
+  containers=$(portainer "$DOCKER_API/containers/json?all=1" | jq -c --arg name "$CONTAINER_NAME" \
+    '[.[] | select(.Names[0] == "/\($name)" or (.Names[0] | endswith("_\($name)"))) | {id: .Id[0:12], name: .Names[0][1:], state: .State, image: .Image}]')
+  current=$(jq -c --arg name "$CONTAINER_NAME" '.[] | select(.name == $name)' <<<"$containers")
+  if [ "$(jq -r '.state' <<<"$current")" = "running" ] && [[ "$(jq -r '.image' <<<"$current")" == *":$VERSION" ]]; then
+    started="yes"
+    break
+  fi
+
+  pending=$(jq -c --arg name "$CONTAINER_NAME" --arg tag ":$VERSION" \
+    '.[] | select(.name != $name and .state == "created" and (.image | endswith($tag)))' <<<"$containers" | head -n1)
+  if [ -n "$pending" ] && [ "$(jq -r '.state // "missing"' <<<"$current")" != "running" ] && [ "$attempt" -ge 6 ]; then
+    pending_id=$(jq -r '.id' <<<"$pending")
+    echo "  → recreate stalled; finishing it: start $pending_id as $CONTAINER_NAME"
+    if [ -n "$current" ]; then
+      portainer -X DELETE "$DOCKER_API/containers/$(jq -r '.id' <<<"$current")" >/dev/null
+    fi
+    portainer -X POST "$DOCKER_API/containers/$pending_id/rename?name=$CONTAINER_NAME" >/dev/null
+    portainer -X POST "$DOCKER_API/containers/$pending_id/start" >/dev/null
+  fi
+  sleep 10
+done
+
+if [ -z "$started" ]; then
+  echo "✗ Container $CONTAINER_NAME is not running $VERSION after 5 minutes:" >&2
+  echo "$containers" | jq . >&2
+  exit 1
+fi
+
+for attempt in $(seq 1 24); do
+  if curl -fsS -o /dev/null "http://$HOST:${HOST_PORT:-8090}/health"; then
+    break
+  fi
+  [ "$attempt" = 24 ] && { echo "✗ http://$HOST:${HOST_PORT:-8090}/health did not answer within 2 minutes" >&2; exit 1; }
+  sleep 5
+done
+
 echo "✓ Deployed $VERSION. Web UI: http://$HOST:${HOST_PORT:-8090} (user admin), browser view: http://$HOST:${VNC_PORT:-6080}"
