@@ -779,6 +779,8 @@ Published artifacts belong under `artifacts/`, never beside source files.
   attributes, and new-village startup until all three succeed; legacy account snapshots are already initialized.
   When its post-login snapshot already contains complete village status and startup did not navigate between villages,
   return to Dorf1 without re-reading Dorf1/Dorf2; retain the full refresh after incomplete analysis or a village switch.
+- Full post-login village status reads Dorf1 before Dorf2 and obtains buildings in that same pass. Do not open Dorf2
+  separately first just to pass a building list into the status read.
 - Browser activity statistics are account-scoped: lifetime counters persist; session counters do not.
 - Build troops `% resources` checkboxes use OR semantics: at least one resource must be selected, any selected
   resource at or above the percentage threshold releases training, and deferred waits use the earliest selected
@@ -800,8 +802,11 @@ Published artifacts belong under `artifacts/`, never beside source files.
   existing paced Train-button click remains the submit action after the shortcut succeeds.
 - An immediately following Build troops task may consume the prior complete village status once, for at most 20
   seconds, only while still on Dorf2 with the same coordinate key. A mismatch or stale snapshot falls back to the
-  normal Dorf1/Dorf2 read. A troop-building queue page may be reused for its candidate action when the exact slot URL
-  still matches and no stale-timer marker is present; the live DOM is still read before any click.
+  normal Dorf1/Dorf2 read. If that 20-second snapshot expired but the browser remains on a fresh, coordinate-matched
+  Dorf2, Build troops may instead re-read complete buildings and live stock there without visiting Dorf1; incomplete
+  overview, resources, tribe, or village identity still requires the full status read. A troop-building queue page may
+  be reused for its candidate action when the exact slot URL still matches and no stale-timer marker is present; the
+  live DOM is still read before any click.
 - Dashboard B/S/W troop indicators represent effective per-village Build troops configuration, never training
   queue activity: green means Auto + Build troops + that building toggle are enabled and the building exists;
   amber means effectively enabled but the building is missing or its status is unknown; muted means disabled.
@@ -896,7 +901,8 @@ Published artifacts belong under `artifacts/`, never beside source files.
   exists. Successful point allocation invalidates memory and disk, and incomplete DOM reads never overwrite a valid
   snapshot. Hero HP uses the global SVG first and opens Attributes only when that live signal is unavailable.
 - Hero-away signals outrank a concurrently rendered stale home icon. Adventure dispatch confirmation may come from
-  the adventure result page or the fresh global Hero status after Travian redirects to Dorf1. The configured Hero
+  the adventure result page or the global `heroRunning` status on any current Official page after a bounded render
+  wait; visit Dorf1 once only when those signals stay ambiguous. The configured Hero
   restart delay also applies to the first ready observation after login, before navigating to Adventures.
 - Automatic ointment use is triggered only for a home, living Hero with an available adventure when HP reaches or
   falls below the configured adventure minimum. Identify the inventory item by Official Travian's `item106`

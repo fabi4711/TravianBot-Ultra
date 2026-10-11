@@ -32,7 +32,9 @@ public sealed class CoreOperationContractTests : IDisposable
         Assert.Same(client.HeroInventory, result.HeroInventory);
         Assert.Equal(7, result.AdventureCount);
         Assert.Same(client.TroopQueues, result.VillageStatus.TroopTrainingQueues);
-        Assert.Equal(["inventory", "account", "buildings", "village", "training", "adventures"], client.Calls);
+        Assert.Empty(client.VillageKnownBuildings!);
+        Assert.Single(result.VillageStatus.Buildings);
+        Assert.Equal(["inventory", "account", "village", "training", "adventures"], client.Calls);
         Assert.Equal((true, false, false, true, true), client.AccountSnapshotArguments);
         Assert.All(client.CancellationTokens, token => Assert.Equal(cancellation.Token, token));
         Assert.True(store.TryLoad("alice", out var persisted, "https://example.com"));
@@ -86,6 +88,7 @@ public sealed class CoreOperationContractTests : IDisposable
         public IReadOnlyList<TroopTrainingQueueStatus> TroopQueues { get; } = [];
         public List<string> Calls { get; } = [];
         public List<CancellationToken> CancellationTokens { get; } = [];
+        public IReadOnlyList<Building>? VillageKnownBuildings { get; private set; }
         public (bool ForceRefresh, bool PreferCurrent, bool RestorePage, bool SuppressUiSync, bool SkipOverview) AccountSnapshotArguments { get; private set; }
 
         public Task<HeroInventoryResources> ReadHeroInventoryResourcesAsync(CancellationToken cancellationToken = default, bool suppressUiSync = false)
@@ -97,11 +100,13 @@ public sealed class CoreOperationContractTests : IDisposable
             return Record("account", cancellationToken, new AccountSnapshot("Teutons", "Capital", 1, [new Village("Capital", "/dorf1.php", true, 1, -2, Tribe: "Teutons")]));
         }
 
-        public Task<VillageStatus> ReadBuildingsStatusAsync(CancellationToken cancellationToken = default)
-            => Record("buildings", cancellationToken, new VillageStatus("Capital", [], new Dictionary<string, string>(), [], [], []));
-
         public Task<VillageStatus> ReadVillageStatusAsync(IReadOnlyList<Village> knownVillages, IReadOnlyList<Building> knownBuildings, CancellationToken cancellationToken = default)
-            => Record("village", cancellationToken, new VillageStatus("Capital", knownVillages, new Dictionary<string, string>(), [], knownBuildings, [], UnreadMessages: 2, UnreadReports: 3));
+        {
+            VillageKnownBuildings = knownBuildings;
+            return Record("village", cancellationToken, new VillageStatus(
+                "Capital", knownVillages, new Dictionary<string, string>(), [],
+                [new Building(20, "Barracks", 1, null)], [], UnreadMessages: 2, UnreadReports: 3));
+        }
 
         public Task<IReadOnlyList<TroopTrainingQueueStatus>> ReadTroopTrainingQueuesAsync(IReadOnlyList<Building>? knownBuildings = null, CancellationToken cancellationToken = default)
             => Record("training", cancellationToken, TroopQueues);
