@@ -120,16 +120,18 @@ public sealed partial class TravianClient
     }
 
     /// <summary>
-    /// Sends 3 settlers from the active village to found a new village on the given free field.
+    /// Sends 3 settlers from the active village to found a new village on the given free field. The tribe is
+    /// only asked for on the account's first foundings; without one the account's own tribe is used.
     /// </summary>
-    public async Task<ExpansionStepResult> FoundVillageAsync(int x, int y, CancellationToken cancellationToken = default)
+    public async Task<ExpansionStepResult> FoundVillageAsync(int x, int y, int? tribeId, CancellationToken cancellationToken = default)
     {
         LogFunctionStarted();
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
         var settlersAtHome = await ReadSettlersAtHomeAsync(cancellationToken);
         if (settlersAtHome < ExpansionCalculator.SettlersPerVillage)
         {
-            return new ExpansionStepResult(false, 1800, $"Found village ({x}|{y}): only {settlersAtHome}/{ExpansionCalculator.SettlersPerVillage} settlers at home.");
+            var wait = await EstimateSettlerTrainingWaitSecondsAsync(cancellationToken);
+            return new ExpansionStepResult(false, wait, $"Found village ({x}|{y}): only {settlersAtHome}/{ExpansionCalculator.SettlersPerVillage} settlers at home.");
         }
 
         var detailsPath = $"/position_details.php?x={x.ToString(CultureInfo.InvariantCulture)}&y={y.ToString(CultureInfo.InvariantCulture)}";
@@ -148,42 +150,109 @@ public sealed partial class TravianClient
         await WaitForPageReadyAsync(cancellationToken);
         Notify($"[expansion] after 'Found new village' url='{_page.Url}'.");
 
-        if (!await HasConfirmButtonAsync())
+        if (await _page.Locator("#content select[name='vid']").CountAsync() > 0)
         {
-            // Some worlds show the settler send form first; fill 3 settlers if needed and submit it.
-            var settlerCount = await ReadAvailableTroopCountAsync($"t{SettlerSlot}", cancellationToken);
-            if (settlerCount is > 0)
+            var chosenTribe = tribeId ?? await ResolveOwnTribeIdAsync(cancellationToken);
+            if (chosenTribe is null)
             {
-                await TryFillTroopInputAsync($"t{SettlerSlot}", SettlerTroopType, ExpansionCalculator.SettlersPerVillage, cancellationToken);
+                return new ExpansionStepResult(false, null, $"Found village ({x}|{y}): the game asks for a tribe and the own tribe is unknown; set one in the founding task.");
             }
 
-            await DelayBeforeClickAsync(cancellationToken, "found village: send");
-            if (!await TryClickConfirmButtonAsync(cancellationToken) || !await WaitForSendTroopsConfirmationPageAsync(cancellationToken))
-            {
-                var error = await ReadReinforcementFormErrorAsync(cancellationToken);
-                await LogPageLinksForDiagnosisAsync("found village form");
-                return new ExpansionStepResult(false, null, $"Found village ({x}|{y}): send form not accepted{(error is null ? "." : $": {error}")}");
-            }
+            // Choosing a tribe reloads the form with &tribe=N, so load that URL directly.
+            Notify($"[expansion] tribe selection required; choosing tribe {chosenTribe}.");
+            await GotoAsync($"{_page.Url}&tribe={chosenTribe.Value.ToString(CultureInfo.InvariantCulture)}", cancellationToken);
         }
 
+        var submit = _page.Locator("#content button.green[type='submit']:not([disabled]), #content form button[type='submit']:not([disabled])").First;
+        if (await submit.CountAsync() == 0)
+        {
+            var error = await ReadReinforcementFormErrorAsync(cancellationToken);
+            await LogPageLinksForDiagnosisAsync("found village form");
+            return new ExpansionStepResult(false, null, $"Found village ({x}|{y}): no enabled send button on the founding form{(error is null ? "." : $": {error}")}");
+        }
+
+        await DelayBeforeClickAsync(cancellationToken, "found village: send");
+        await ClickLocatorAsync(submit, "found-village-send", cancellationToken);
+        await WaitForPageReadyAsync(cancellationToken);
+
+        // Older layouts show a confirmation page after the form.
         var confirm = _page.Locator("button#confirmSendTroops, button[name='confirmSendTroops'], button.rallyPointConfirm").First;
-        if (await confirm.CountAsync() == 0)
+        if (await confirm.CountAsync() > 0)
         {
-            await LogPageLinksForDiagnosisAsync("found village confirm");
-            return new ExpansionStepResult(false, null, $"Found village ({x}|{y}): confirm button not found.");
+            await DelayBeforeClickAsync(cancellationToken, "found village: confirm");
+            await ClickLocatorAsync(confirm, "found-village-confirm", cancellationToken);
+            await WaitForSendTroopsCompletionAsync(cancellationToken);
         }
 
-        await DelayBeforeClickAsync(cancellationToken, "found village: confirm");
-        await ClickLocatorAsync(confirm, "found-village-confirm", cancellationToken);
-        await WaitForSendTroopsCompletionAsync(cancellationToken);
-        var confirmError = await ReadReinforcementFormErrorAsync(cancellationToken);
-        if (confirmError is not null)
+        var settlersAfter = await ReadSettlersAtHomeAsync(cancellationToken);
+        if (settlersAfter > settlersAtHome - ExpansionCalculator.SettlersPerVillage)
         {
-            return new ExpansionStepResult(false, null, $"Found village ({x}|{y}): {confirmError}");
+            var error = await ReadReinforcementFormErrorAsync(cancellationToken);
+            await LogPageLinksForDiagnosisAsync("found village result");
+            return new ExpansionStepResult(false, 900, $"Found village ({x}|{y}): settlers did not leave (home before={settlersAtHome}, after={settlersAfter}){(error is null ? "." : $": {error}")}");
         }
 
         Notify($"[expansion] settlers sent to found ({x}|{y}).");
         return new ExpansionStepResult(true, null, $"Found village ({x}|{y}): settlers sent.");
+    }
+
+    /// <summary>
+    /// Seconds until the settlers in training are done, read from the Residence/Palace queue. Falls back to
+    /// 30 minutes when no settler is in training or the building is missing.
+    /// </summary>
+    private async Task<int> EstimateSettlerTrainingWaitSecondsAsync(CancellationToken cancellationToken)
+    {
+        const int fallbackSeconds = 1800;
+        var status = await ReadBuildingsStatusAsync(cancellationToken);
+        if (FindExpansionBuilding(status.Buildings) is not var (building, _))
+        {
+            return fallbackSeconds;
+        }
+
+        await GotoAsync($"{Paths.BuildBySlot(building.SlotId!.Value)}&s=1", cancellationToken);
+        var queue = await ReadTroopTrainingQueueFromCurrentPageAsync(cancellationToken);
+        var seconds = SettlerTrainingSecondsLeft(queue);
+        Notify($"[expansion] settlers in training finish in {seconds?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}s.");
+        return seconds is int value ? Math.Clamp(value + 30, 60, 3600) : fallbackSeconds;
+    }
+
+    /// <summary>The longest remaining time of the settler rows; each row's time already includes the rows before it.</summary>
+    internal static int? SettlerTrainingSecondsLeft(IReadOnlyList<BuildQueueItem> queue)
+    {
+        int? longest = null;
+        foreach (var item in queue)
+        {
+            if (CountSettlersInQueue([item]) == 0)
+            {
+                continue;
+            }
+
+            var match = Regex.Match(item.TimeLeft ?? item.Text ?? string.Empty, @"(\d+):(\d{2}):(\d{2})");
+            if (match.Success)
+            {
+                var seconds = int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture) * 3600
+                    + int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture) * 60
+                    + int.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
+                longest = Math.Max(longest ?? 0, seconds);
+            }
+        }
+
+        return longest;
+    }
+
+    private async Task<int?> ResolveOwnTribeIdAsync(CancellationToken cancellationToken)
+    {
+        var (tribe, _, _) = await GetCachedTribeAndPlusAsync(cancellationToken);
+        foreach (var id in new[] { 1, 2, 3, 6, 7, 8 })
+        {
+            if (string.Equals(TroopCatalog.ResolveTribeFromTravianId(id), tribe, StringComparison.OrdinalIgnoreCase))
+            {
+                return id;
+            }
+        }
+
+        Notify($"[expansion] own tribe '{tribe}' has no Travian tribe id.");
+        return null;
     }
 
     private static (Building Building, ExpansionBuildingType Type)? FindExpansionBuilding(IReadOnlyList<Building> buildings)
@@ -259,9 +328,6 @@ public sealed partial class TravianClient
 
         return null;
     }
-
-    private async Task<bool> HasConfirmButtonAsync() =>
-        await _page.Locator("button#confirmSendTroops, button[name='confirmSendTroops'], button.rallyPointConfirm").CountAsync() > 0;
 
     private async Task LogPageLinksForDiagnosisAsync(string stage)
     {

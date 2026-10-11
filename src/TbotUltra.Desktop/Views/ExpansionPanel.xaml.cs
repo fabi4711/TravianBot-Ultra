@@ -7,7 +7,7 @@ namespace TbotUltra.Desktop.Views;
 public partial class ExpansionPanel : UserControl
 {
     public event Action? TrainSettlersRequested;
-    public event Action<int, int>? FoundVillageRequested;
+    public event Action<int, int, int?>? FoundVillageRequested;
 
     public ExpansionPanel() => InitializeComponent();
 
@@ -24,6 +24,9 @@ public partial class ExpansionPanel : UserControl
             return;
         }
 
-        FoundVillageRequested?.Invoke(x, y);
+        int? tribeId = FoundTribeComboBox.SelectedItem is ComboBoxItem { Tag: string tag } && int.TryParse(tag, out var parsed)
+            ? parsed
+            : null;
+        FoundVillageRequested?.Invoke(x, y, tribeId);
     }
 }
