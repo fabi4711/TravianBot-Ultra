@@ -83,6 +83,26 @@ public sealed class ExpansionCalculatorTests
             readiness.MissingRequirements);
     }
 
+    [Fact]
+    public void SecondsUntilAffordable_UsesTheSlowestMissingResource()
+    {
+        var stock = new Dictionary<string, long> { ["wood"] = 4800, ["clay"] = 4400, ["iron"] = 9000, ["crop"] = 4200 };
+        var production = new Dictionary<string, double?> { ["wood"] = 3600, ["clay"] = 3600, ["iron"] = 3600, ["crop"] = 1800 };
+        var cost = new Dictionary<string, long> { ["wood"] = 5800, ["clay"] = 4400, ["iron"] = 4600, ["crop"] = 5200 };
+
+        Assert.Equal(2000, ExpansionCalculator.SecondsUntilAffordable(stock, production, cost));
+    }
+
+    [Fact]
+    public void SecondsUntilAffordable_IsUnknownWithoutProductionForAMissingResource()
+    {
+        var stock = new Dictionary<string, long> { ["wood"] = 0 };
+        var production = new Dictionary<string, double?> { ["wood"] = null };
+        var cost = new Dictionary<string, long> { ["wood"] = 5800 };
+
+        Assert.Null(ExpansionCalculator.SecondsUntilAffordable(stock, production, cost));
+    }
+
     private static VillageFoundingState State() => new(3, 1, 500, 500, Resources(), true);
 
     private static IReadOnlyDictionary<string, long> Resources(long clay = 750)

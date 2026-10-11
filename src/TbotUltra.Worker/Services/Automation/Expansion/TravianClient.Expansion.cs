@@ -75,13 +75,25 @@ public sealed partial class TravianClient
             return new ExpansionStepResult(false, 1200, "Train settlers: settlers cannot be trained right now (resources or requirements).");
         }
 
-        var liveResources = (await ReadTroopTrainingResourceSnapshotFromCurrentPageAsync(cancellationToken)).Resources;
+        var liveSnapshot = await ReadTroopTrainingResourceSnapshotFromCurrentPageAsync(cancellationToken);
+        var liveResources = liveSnapshot.Resources;
         var affordable = MaxAffordable(liveResources, buildInfo);
         Notify($"[expansion] live resources wood={liveResources.GetValueOrDefault("wood")}, clay={liveResources.GetValueOrDefault("clay")}, iron={liveResources.GetValueOrDefault("iron")}, crop={liveResources.GetValueOrDefault("crop")}; affordable settlers={affordable}.");
         var amount = Math.Min(plan.SettlersToTrain, affordable);
         if (amount <= 0)
         {
-            return new ExpansionStepResult(false, 1200, $"Train settlers: not enough resources for one settler (needs {buildInfo.WoodCost}/{buildInfo.ClayCost}/{buildInfo.IronCost}/{buildInfo.CropCost}).");
+            var cost = new Dictionary<string, long>
+            {
+                ["wood"] = buildInfo.WoodCost,
+                ["clay"] = buildInfo.ClayCost,
+                ["iron"] = buildInfo.IronCost,
+                ["crop"] = buildInfo.CropCost,
+            };
+            var secondsUntilAffordable = ExpansionCalculator.SecondsUntilAffordable(liveResources, liveSnapshot.ProductionByHour, cost);
+            // A short buffer covers rounding of the displayed production; unknown production falls back to 20 minutes.
+            var wait = secondsUntilAffordable is int seconds ? Math.Clamp(seconds + 30, 60, 3600) : 1200;
+            Notify($"[expansion] resources for one settler in {secondsUntilAffordable?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}s; waiting {wait}s.");
+            return new ExpansionStepResult(false, wait, $"Train settlers: not enough resources for one settler (needs {buildInfo.WoodCost}/{buildInfo.ClayCost}/{buildInfo.IronCost}/{buildInfo.CropCost}).");
         }
 
         await DelayBeforeClickAsync(cancellationToken, "train settlers");
