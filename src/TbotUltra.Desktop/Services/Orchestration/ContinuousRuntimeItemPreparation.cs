@@ -56,7 +56,7 @@ internal interface IContinuousRuntimeItemPreparationPort
     Dictionary<string, string> BuildReinforcementPayload(
         BotOptions options,
         IReadOnlyList<string> selectedSources);
-    bool ScheduleFarmListAllianceCheck(TimeSpan delay);
+    bool ScheduleFarmListAllianceCheck(Dictionary<string, string> payload, TimeSpan delay);
     bool ScheduleReinforcementSend(
         Dictionary<string, string> payload,
         TimeSpan delay,
@@ -121,7 +121,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             options,
             onlyVillage?.Key,
             cancellationToken);
-        PrepareFarmListAllianceCheckItem(runtimeItems, consideredGroups, queueItems, onlyVillage?.Key);
+        PrepareFarmListAllianceCheckItem(runtimeItems, villages, consideredGroups, queueItems, onlyVillage?.Key);
         PrepareResourceTransferItem(runtimeItems, enabledGroups, options, onlyVillage?.Key);
         PrepareReinforcementItem(runtimeItems, enabledGroups, queueItems, options, onlyVillage?.Key);
     }
@@ -418,6 +418,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
 
     private void PrepareFarmListAllianceCheckItem(
         AutomationRuntimeItemReconciler runtimeItems,
+        IReadOnlyList<AutomationRuntimeVillage> villages,
         IReadOnlyList<QueueGroup> consideredGroups,
         IReadOnlyList<QueueItem> queueItems,
         string? onlyVillageKey)
@@ -430,9 +431,17 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             return;
         }
 
+        // Village rounds only pick village-less items for the Hero group, so the check runs in a farming village.
+        var village = villages.FirstOrDefault(candidate =>
+            port.GetEnabledGroupsForVillage(candidate.Key).Contains(QueueGroup.Farming));
+        if (village is null)
+        {
+            return;
+        }
+
         var jitter = TimeSpan.FromMinutes(Random.Shared.Next(-120, 121));
         var delay = ContinuousLoopSelector.ResolveFarmListAllianceCheckDelay(queueItems, DateTimeOffset.UtcNow, jitter);
-        port.ScheduleFarmListAllianceCheck(delay);
+        port.ScheduleFarmListAllianceCheck(port.BuildVillagePayload(village), delay);
     }
 
     private void PrepareResourceTransferItem(
