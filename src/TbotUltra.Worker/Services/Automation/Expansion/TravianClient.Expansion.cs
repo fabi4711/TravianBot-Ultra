@@ -40,7 +40,8 @@ public sealed partial class TravianClient
         var usedSlots = Math.Max(0, status.Villages.Count - 1);
         var settlersAtHome = await ReadSettlersAtHomeAsync(cancellationToken);
 
-        await EnsurePageForReadAsync(Paths.BuildBySlot(building.SlotId!.Value), "train settlers", cancellationToken);
+        // The Residence/Palace opens on its management tab; settlers are trained on tab s=1.
+        await EnsurePageForReadAsync($"{Paths.BuildBySlot(building.SlotId!.Value)}&s=1", "train settlers", cancellationToken);
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
         var queue = await ReadTroopTrainingQueueFromCurrentPageAsync(cancellationToken);
         var settlersInTraining = CountSettlersInQueue(queue);
@@ -189,7 +190,7 @@ public sealed partial class TravianClient
         var total = 0;
         foreach (var item in queue)
         {
-            var match = Regex.Match(item.Text ?? string.Empty, @"(\d+)\s*Settlers?", RegexOptions.IgnoreCase);
+            var match = Regex.Match(item.Text ?? string.Empty, @"(\d+)\s*(?:Settlers?|Siedler)", RegexOptions.IgnoreCase);
             if (match.Success)
             {
                 total += int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);

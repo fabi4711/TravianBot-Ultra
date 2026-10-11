@@ -117,8 +117,9 @@ public sealed class ExpansionWorkerHelperTests
             new TbotUltra.Worker.Domain.BuildQueueItem("2 Settlers", "0:10:00"),
             new TbotUltra.Worker.Domain.BuildQueueItem("1 Settler", "0:20:00"),
             new TbotUltra.Worker.Domain.BuildQueueItem("5 Clubswingers", "0:05:00"),
+            new TbotUltra.Worker.Domain.BuildQueueItem("1 Siedler", "0:20:00"),
         };
 
-        Assert.Equal(3, TbotUltra.Worker.Services.TravianClient.CountSettlersInQueue(queue));
+        Assert.Equal(4, TbotUltra.Worker.Services.TravianClient.CountSettlersInQueue(queue));
     }
 }
