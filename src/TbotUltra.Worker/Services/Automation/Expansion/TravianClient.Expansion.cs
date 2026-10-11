@@ -37,7 +37,9 @@ public sealed partial class TravianClient
 
         var (building, type) = expansion.Value;
         var level = building.Level ?? 0;
-        var usedSlots = Math.Max(0, status.Villages.Count - 1);
+        var usedSlots = level >= 10
+            ? await ReadUsedExpansionSlotsAsync(building.SlotId!.Value, status.Villages.Count, cancellationToken)
+            : 0;
         var settlersAtHome = await ReadSettlersAtHomeAsync(cancellationToken);
 
         // The Residence/Palace opens on its management tab; settlers are trained on tab s=1.
@@ -200,6 +202,29 @@ public sealed partial class TravianClient
     /// Seconds until the settlers in training are done, read from the Residence/Palace queue. Falls back to
     /// 30 minutes when no settler is in training or the building is missing.
     /// </summary>
+    // Expansion slots belong to the village whose Residence/Palace founded or conquered the other village,
+    // so the account-wide village count overstates used slots in every village but the founding one.
+    private async Task<int> ReadUsedExpansionSlotsAsync(int buildingSlotId, int villageCount, CancellationToken cancellationToken)
+    {
+        await EnsurePageForReadAsync($"{Paths.BuildBySlot(buildingSlotId)}&s=4", "expansion slots", cancellationToken);
+        var counts = await _page.EvaluateAsync<int[]>(
+            """
+            () => [
+              document.querySelectorAll('#build .usedExpansionSlot').length,
+              document.querySelectorAll('#build .freeExpansionSlot').length
+            ]
+            """).WaitAsync(cancellationToken);
+        if (counts is not [var used, var free] || used + free == 0)
+        {
+            var fallback = Math.Max(0, villageCount - 1);
+            Notify($"[expansion] expansion tab showed no slots; assuming {fallback} used slot(s) from the village count.");
+            return fallback;
+        }
+
+        Notify($"[expansion] expansion tab: used={used}, free={free}.");
+        return used;
+    }
+
     private async Task<int> EstimateSettlerTrainingWaitSecondsAsync(CancellationToken cancellationToken)
     {
         const int fallbackSeconds = 1800;
