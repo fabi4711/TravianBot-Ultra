@@ -68,10 +68,10 @@ public partial class MainWindow
             CancellationToken cancellationToken) =>
             new(owner.MaybeKeepBrowserFreshDuringContinuousLoopAsync(options, cancellationToken));
 
-        public ValueTask MaybeParkOnDorf2WhileIdleAsync(
+        public ValueTask MaybeParkOnDorf2Async(
             BotOptions options,
             CancellationToken cancellationToken) =>
-            new(owner.MaybeParkOnDorf2WhileIdleAsync(options, cancellationToken));
+            new(owner.MaybeParkOnDorf2Async(options, cancellationToken));
 
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 

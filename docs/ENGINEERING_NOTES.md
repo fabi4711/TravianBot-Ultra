@@ -273,6 +273,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   the current page (including the global Hero control and active-village sidebar), never page-specific Dorf1/Dorf2
   content, and never navigates to Dorf1 merely to verify a session; an unresolved page is a transient read failure.
   Explicit user operations such as Login, scans, and refresh buttons remain allowed while automation is idle.
+- Dorf2 parking applies throughout active Continuous Loop and Auto Queue, not only long idle waits. Enabling it
+  wakes a running automation; at safe boundaries, check the live page before tasks or waits and after each action.
+  Move only from Dorf1 to Dorf2; leave other pages and stopped/paused automation untouched.
 - The village status cache and queue use canonical coordinate keys. Legacy name-keyed entries are migrated only
   when coordinates can be resolved; active coordinates come from `#villageName[data-x][data-y]`.
 - Per-village runtime caches are shared by the UI and background loop and must be synchronized. A display-name

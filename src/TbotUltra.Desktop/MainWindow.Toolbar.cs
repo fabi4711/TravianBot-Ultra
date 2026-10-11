@@ -241,6 +241,19 @@ public partial class MainWindow
         }
         if (saved)
         {
+            if (!optionsBeforeSettings.ParkOnDorf2WhileIdle
+                && optionsAfterSettings.ParkOnDorf2WhileIdle)
+            {
+                if (_automationDesk.Current is { Phase: AutomationPhase.Running, Mode: AutomationRunMode.ContinuousLoop })
+                {
+                    _automationDesk.RequestImmediateWork();
+                }
+                var wake = _automationDesk.Wake(AutomationWakeReason.SettingsChanged);
+                if (wake is AutomationWakeResult.Accepted or AutomationWakeResult.Coalesced)
+                {
+                    AppendLog("[dorf2-park] setting enabled; current Dorf1 page will be checked at the next automation boundary.");
+                }
+            }
             if (!taskPriorityBeforeSettings.SequenceEqual(_continuousLoopGroupOrder, StringComparer.OrdinalIgnoreCase))
             {
                 AppendLog($"[task-priority] saved order: {string.Join(" > ", _continuousLoopGroupOrder)}.");

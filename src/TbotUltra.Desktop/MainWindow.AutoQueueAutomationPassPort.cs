@@ -23,10 +23,10 @@ public partial class MainWindow
         public bool TryRequestSmartSleep(DateTimeOffset? trustedDeadlineUtc) =>
             owner.TryRequestSmartSleep(trustedDeadlineUtc);
 
-        public ValueTask MaybeParkOnDorf2WhileIdleAsync(
+        public ValueTask MaybeParkOnDorf2Async(
             BotOptions options,
             CancellationToken cancellationToken) =>
-            new(owner.MaybeParkOnDorf2WhileIdleAsync(options, cancellationToken));
+            new(owner.MaybeParkOnDorf2Async(options, cancellationToken));
 
         public void Log(string message) => owner.AppendLog(message);
 

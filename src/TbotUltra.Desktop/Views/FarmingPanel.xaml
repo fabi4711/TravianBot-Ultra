@@ -690,16 +690,18 @@
                             BorderBrush="{DynamicResource DangerBorderBrush}"
                             Click="ClearFarmHistoryButton_Click" />
                     <DataGrid x:Name="FarmHistoryGrid" AutoGenerateColumns="False" IsReadOnly="True"
-                              CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None"
+                              CanUserAddRows="False" CanUserReorderColumns="False" CanUserResizeColumns="False"
+                              HeadersVisibility="Column" GridLinesVisibility="None"
                               EnableRowVirtualization="True" VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True">
+                              VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Sent" Binding="{Binding SentAtLocalText}" Width="145" />
-                            <DataGridTextColumn Header="Village" Binding="{Binding VillageName}" Width="110" />
-                            <DataGridTextColumn Header="List" Binding="{Binding ListName}" Width="*" />
-                            <DataGridTextColumn Header="Since previous" Binding="{Binding SincePreviousText}" Width="125" />
-                            <DataGridTextColumn Header="Response" Binding="{Binding Response}" Width="95" />
-                            <DataGridTextColumn Header="Source" Binding="{Binding Origin}" Width="95" />
+                            <DataGridTextColumn Header="Village" Binding="{Binding VillageName}" Width="1.5*" MinWidth="140" />
+                            <DataGridTextColumn Header="List" Binding="{Binding ListName}" Width="2.8*" MinWidth="260" />
+                            <DataGridTextColumn Header="Sent" Binding="{Binding SentAtLocalText}" Width="1.2*" MinWidth="120" />
+                            <DataGridTextColumn Header="Since previous" Binding="{Binding SincePreviousText}" Width="1.25*" MinWidth="125" />
+                            <DataGridTextColumn Header="Response" Binding="{Binding Response}" Width="1.1*" MinWidth="110" />
+                            <DataGridTextColumn Header="Source" Binding="{Binding Origin}" Width="0.95*" MinWidth="95" />
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

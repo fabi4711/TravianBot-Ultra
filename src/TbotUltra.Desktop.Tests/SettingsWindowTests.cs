@@ -238,9 +238,9 @@ public sealed class SettingsWindowTests : IDisposable
                 var infoIcon = Assert.IsType<ContentControl>(window.FindName("ParkOnDorf2WhileIdleInfoIcon"));
 
                 Assert.True(window.SettingsVm.Pacing.ParkOnDorf2WhileIdle);
-                Assert.Equal("Park on Dorf2 while idle", checkBox.Content);
+                Assert.Equal("Park on Dorf2 during automation", checkBox.Content);
                 Assert.Equal(
-                    "When enabled, active automation parks the current village on Dorf2 instead of Dorf1 when no work is due for at least 60 seconds. It does not move from other pages, interfere with manual browsing, or act while automation is stopped. Incoming attack monitoring and Troop Evasion may temporarily keep or return to Dorf1.",
+                    "When enabled, active automation checks the current page before tasks or waits and after each action. If it is Dorf1, the bot moves to Dorf2. Saving this setting wakes a running automation for an immediate check at its next safe boundary. Other pages are left unchanged; paused or stopped automation does not move. Incoming attack monitoring and Troop Evasion may temporarily visit Dorf1.",
                     infoIcon.ToolTip);
             }
             finally

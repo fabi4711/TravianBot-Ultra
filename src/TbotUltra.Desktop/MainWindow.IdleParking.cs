@@ -4,7 +4,7 @@ namespace TbotUltra.Desktop;
 
 public partial class MainWindow
 {
-    private async Task MaybeParkOnDorf2WhileIdleAsync(
+    private async Task MaybeParkOnDorf2Async(
         BotOptions options,
         CancellationToken cancellationToken)
     {
@@ -15,7 +15,7 @@ public partial class MainWindow
                     AppendLog,
                     cancellationToken))
             {
-                AppendLog("[idle-park] parked the current village on Dorf2 while automation waits.");
+                AppendLog("[dorf2-park] moved the current village from Dorf1 to Dorf2 during automation.");
             }
         }
         catch (OperationCanceledException)
@@ -24,7 +24,7 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            AppendLog($"[idle-park] could not park on Dorf2; automation will continue: {ex.Message}");
+            AppendLog($"[dorf2-park] could not move from Dorf1 to Dorf2; automation will continue: {ex.Message}");
         }
     }
 }

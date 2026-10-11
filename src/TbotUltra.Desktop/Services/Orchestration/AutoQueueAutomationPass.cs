@@ -8,7 +8,7 @@ internal interface IAutoQueueAutomationPassPort
     BotOptions LoadOptionsWithSelectedVillage();
     ValueTask HonorPendingVillageSwitchAsync(BotOptions options, CancellationToken cancellationToken);
     bool TryRequestSmartSleep(DateTimeOffset? trustedDeadlineUtc);
-    ValueTask MaybeParkOnDorf2WhileIdleAsync(BotOptions options, CancellationToken cancellationToken);
+    ValueTask MaybeParkOnDorf2Async(BotOptions options, CancellationToken cancellationToken);
     void Log(string message);
     ValueTask<AutomationActionOutcome> ExecuteAsync(
         AutomationCandidate action,
@@ -48,6 +48,10 @@ internal sealed class AutoQueueAutomationPass : IAutomationModePassPort
     {
         var options = _port.LoadOptionsWithSelectedVillage();
         await _port.HonorPendingVillageSwitchAsync(options, cancellationToken);
+        if (options.ParkOnDorf2WhileIdle)
+        {
+            await _port.MaybeParkOnDorf2Async(options, cancellationToken);
+        }
         if (_runtime.HasPendingLoginRound)
         {
             var priority = _runtime.SelectReadyPriorityQueueItem(options);
@@ -97,11 +101,9 @@ internal sealed class AutoQueueAutomationPass : IAutomationModePassPort
             queueDeadlineOverrides: _runtime.GetSmartSleepQueueDeadlineOverrides(eligibleItems, now));
         var smartSleepRequested = _port.TryRequestSmartSleep(
             smartSleepDelay is { } delay ? now.Add(delay) : null);
-        var remainingIdle = nextDeferredItem.NextAttemptAt - now;
-        if (!smartSleepRequested
-            && _runtime.TryBeginIdleDorf2ParkingEvaluation(options.ParkOnDorf2WhileIdle, remainingIdle))
+        if (!smartSleepRequested && options.ParkOnDorf2WhileIdle)
         {
-            await _port.MaybeParkOnDorf2WhileIdleAsync(options, cancellationToken);
+            await _port.MaybeParkOnDorf2Async(options, cancellationToken);
         }
         return new AutomationStateSnapshot([AutomationCandidate.FromQueueItem(nextDeferredItem)]);
     }
@@ -111,9 +113,16 @@ internal sealed class AutoQueueAutomationPass : IAutomationModePassPort
         AutomationCandidate action,
         CancellationToken cancellationToken) => _port.ExecuteAsync(action, cancellationToken);
 
-    public ValueTask CompleteAsync(
+    public async ValueTask CompleteAsync(
         AutomationRunContext context,
         AutomationCandidate action,
         AutomationActionOutcome outcome,
-        CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        CancellationToken cancellationToken)
+    {
+        var options = _port.LoadOptionsWithSelectedVillage();
+        if (options.ParkOnDorf2WhileIdle)
+        {
+            await _port.MaybeParkOnDorf2Async(options, cancellationToken);
+        }
+    }
 }

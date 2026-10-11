@@ -121,6 +121,50 @@ public sealed class AutoQueueAutomationPassTests
             new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7),
             CancellationToken.None);
 
+        Assert.Equal(2, preparation.IdleDorf2ParkingCount);
+    }
+
+    [Fact]
+    public async Task CompletedAction_ParksOnDorf2WhenEnabled()
+    {
+        var preparation = new InMemoryAutoQueueAutomationPassPort
+        {
+            Options = new BotOptions { ParkOnDorf2WhileIdle = true },
+        };
+        var pass = new AutoQueueAutomationPass(preparation, new FixedTimeProvider(Now));
+        var context = new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7);
+        var action = AutomationCandidate.FromQueueItem(new QueueItem
+        {
+            TaskName = "upgrade_building",
+            Group = QueueGroup.Construction,
+        });
+
+        await pass.CompleteAsync(context, action, AutomationActionOutcome.Completed, CancellationToken.None);
+
+        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+    }
+
+    [Fact]
+    public async Task ReadyAction_ChecksDorf1BeforeSelectionWhenParkingIsEnabled()
+    {
+        var item = new QueueItem
+        {
+            TaskName = "upgrade_building",
+            Group = QueueGroup.Construction,
+            NextAttemptAt = Now,
+        };
+        var preparation = new InMemoryAutoQueueAutomationPassPort
+        {
+            Options = new BotOptions { ParkOnDorf2WhileIdle = true },
+            SelectedItems = new Queue<QueueItem?>([item]),
+        };
+        var pass = new AutoQueueAutomationPass(preparation, new FixedTimeProvider(Now));
+
+        var snapshot = await pass.ReadAsync(
+            new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7),
+            CancellationToken.None);
+
+        Assert.Single(snapshot.Candidates);
         Assert.Equal(1, preparation.IdleDorf2ParkingCount);
     }
 
@@ -188,7 +232,6 @@ public sealed class AutoQueueAutomationPassTests
         public bool PrioritizeDeadlineWorkOnWake { get; set; } = true;
         public BotOptions Options { get; init; } = new();
         public int IdleDorf2ParkingCount { get; private set; }
-        private bool _idleDorf2ParkingEvaluated;
         public long RunLogId => 7;
         public IReadOnlySet<QueueGroup> SmartSleepDeadlineGroups { get; } =
             SmartSleepDeadlinePolicy.AllGroups.ToHashSet();
@@ -208,19 +251,12 @@ public sealed class AutoQueueAutomationPassTests
             RequestedSmartSleepDeadline = trustedDeadlineUtc;
             return false;
         }
-        public ValueTask MaybeParkOnDorf2WhileIdleAsync(BotOptions options, CancellationToken cancellationToken)
+        public ValueTask MaybeParkOnDorf2Async(BotOptions options, CancellationToken cancellationToken)
         {
             IdleDorf2ParkingCount++;
             return ValueTask.CompletedTask;
         }
-        public void MarkActivePass() => _idleDorf2ParkingEvaluated = false;
-        public bool TryBeginIdleDorf2ParkingEvaluation(bool enabled, TimeSpan remainingIdle)
-        {
-            if (!enabled || remainingIdle < TimeSpan.FromSeconds(60) || _idleDorf2ParkingEvaluated)
-                return false;
-            _idleDorf2ParkingEvaluated = true;
-            return true;
-        }
+        public void MarkActivePass() { }
         public void Log(string message) => LogMessages.Add(message);
         public ValueTask<AutomationActionOutcome> ExecuteAsync(
             AutomationCandidate action,
