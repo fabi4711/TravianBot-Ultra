@@ -41,7 +41,8 @@ public sealed partial class TravianClient
         var settlersAtHome = await ReadSettlersAtHomeAsync(cancellationToken);
 
         // The Residence/Palace opens on its management tab; settlers are trained on tab s=1.
-        await EnsurePageForReadAsync($"{Paths.BuildBySlot(building.SlotId!.Value)}&s=1", "train settlers", cancellationToken);
+        var trainingPath = $"{Paths.BuildBySlot(building.SlotId!.Value)}&s=1";
+        await EnsurePageForReadAsync(trainingPath, "train settlers", cancellationToken);
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
         var queue = await ReadTroopTrainingQueueFromCurrentPageAsync(cancellationToken);
         var settlersInTraining = CountSettlersInQueue(queue);
@@ -74,7 +75,9 @@ public sealed partial class TravianClient
             return new ExpansionStepResult(false, 1200, "Train settlers: settlers cannot be trained right now (resources or requirements).");
         }
 
-        var affordable = MaxAffordable(status.Resources, buildInfo);
+        var liveResources = (await ReadTroopTrainingResourceSnapshotFromCurrentPageAsync(cancellationToken)).Resources;
+        var affordable = MaxAffordable(liveResources, buildInfo);
+        Notify($"[expansion] live resources wood={liveResources.GetValueOrDefault("wood")}, clay={liveResources.GetValueOrDefault("clay")}, iron={liveResources.GetValueOrDefault("iron")}, crop={liveResources.GetValueOrDefault("crop")}; affordable settlers={affordable}.");
         var amount = Math.Min(plan.SettlersToTrain, affordable);
         if (amount <= 0)
         {
@@ -85,6 +88,15 @@ public sealed partial class TravianClient
         if (!await SubmitTroopTrainingFromCurrentPageAsync(inputName, amount, useMaxShortcut: false, cancellationToken))
         {
             return new ExpansionStepResult(false, 900, $"Train settlers: submitting {amount} settler(s) failed.");
+        }
+
+        // The submit helper can report success although Travian rejected the order, so confirm it in the queue.
+        await GotoAsync(trainingPath, cancellationToken);
+        var settlersInTrainingAfter = CountSettlersInQueue(await ReadTroopTrainingQueueFromCurrentPageAsync(cancellationToken));
+        if (settlersInTrainingAfter < settlersInTraining + amount)
+        {
+            Notify($"[expansion] settler order not confirmed: training before={settlersInTraining}, after={settlersInTrainingAfter}, ordered={amount}.");
+            return new ExpansionStepResult(false, 900, $"Train settlers: order for {amount} settler(s) was not confirmed in the training queue.");
         }
 
         Notify($"[expansion] queued {amount} settler(s) at {type}.");
@@ -200,22 +212,18 @@ public sealed partial class TravianClient
         return total;
     }
 
-    private static int MaxAffordable(IReadOnlyDictionary<string, string> resources, TroopUnitBuildInfo info)
+    private static int MaxAffordable(IReadOnlyDictionary<string, long> resources, TroopUnitBuildInfo info)
     {
-        long Read(string key) => resources.TryGetValue(key, out var raw)
-            && long.TryParse(Regex.Replace(raw ?? string.Empty, @"[^\d]", string.Empty), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : long.MaxValue;
         static long Per(long stock, int cost) => cost > 0 ? stock / cost : long.MaxValue;
 
         var max = new[]
         {
-            Per(Read("wood"), info.WoodCost),
-            Per(Read("clay"), info.ClayCost),
-            Per(Read("iron"), info.IronCost),
-            Per(Read("crop"), info.CropCost),
+            Per(resources.GetValueOrDefault("wood"), info.WoodCost),
+            Per(resources.GetValueOrDefault("clay"), info.ClayCost),
+            Per(resources.GetValueOrDefault("iron"), info.IronCost),
+            Per(resources.GetValueOrDefault("crop"), info.CropCost),
         }.Min();
-        return (int)Math.Min(max, int.MaxValue);
+        return (int)Math.Clamp(max, 0, int.MaxValue);
     }
 
     private async Task<ILocator?> FindFoundVillageLinkAsync()
