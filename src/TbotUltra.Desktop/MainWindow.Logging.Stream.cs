@@ -228,20 +228,33 @@ public partial class MainWindow
                     {
                         var isAcknowledgedAlarm = IsAutoAcknowledgedAlarmMessage(part);
                         var accountKey = _accountStore.ActiveAccountName();
-                        var signature = $"{accountKey}|{humanPart}";
-                        alarmEntriesChanged = true;
-                        var isNewAlarm = _alarmsViewModel.RecordAlarm(
-                            line,
-                            signature,
-                            isAcknowledgedAlarm,
-                            DateTimeOffset.UtcNow);
-                        if (isNewAlarm)
+                        var signature = $"{accountKey}|{AlarmIncidentSignature(humanPart)}";
+                        var nowUtc = DateTimeOffset.UtcNow;
+                        var alreadyReported = false;
+                        if (IsFollowOnFailureDiagnostic(part))
                         {
-                            // Alarm rows are also normal terminal rows, but the session file must
-                            // contain the event only once and under the alarm section. Repeated
-                            // identical alarms inside the coalescing window update the UI count
-                            // and are not appended again.
-                            alarmLinesForSessionLog.Add(line);
+                            foreach (var entry in _alarmEntries)
+                            {
+                                if (entry.Signature == signature
+                                    && nowUtc - entry.LastSeenUtc <= TimeSpan.FromSeconds(30))
+                                {
+                                    alreadyReported = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!alreadyReported)
+                        {
+                            alarmEntriesChanged = true;
+                            var isNewAlarm = _alarmsViewModel.RecordAlarm(
+                                line, signature, isAcknowledgedAlarm, nowUtc);
+                            if (isNewAlarm)
+                            {
+                                // Worker, queue and loop may log one exception in succession.
+                                // Keep their terminal detail, but only one alarm incident.
+                                alarmLinesForSessionLog.Add(line);
+                            }
                         }
                     }
 
@@ -719,6 +732,26 @@ public partial class MainWindow
             || value.Contains("invalid")
             || value.Contains("not logged in")
             || value.Contains("could not");
+    }
+
+    internal static bool IsFollowOnFailureDiagnostic(string message)
+        => message.StartsWith("[queue] FAIL ", StringComparison.OrdinalIgnoreCase)
+            || Regex.IsMatch(message, @"^\[LOOP \d+\] FAIL ", RegexOptions.IgnoreCase);
+
+    internal static string AlarmIncidentSignature(string message)
+    {
+        var match = Regex.Match(message,
+            @"(?:after \d+(?:[.,]\d+)?s: |\] FAIL \d+(?:[.,]\d+)?s \| )(?<failure>\w+Exception: .+?)(?= \[context |$)",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return message;
+        }
+
+        var contextAt = message.LastIndexOf(" [context ", StringComparison.Ordinal);
+        return contextAt >= 0
+            ? $"{match.Groups["failure"].Value}|{message[contextAt..]}"
+            : match.Groups["failure"].Value;
     }
 
     private static bool IsAutoAcknowledgedAlarmMessage(string message)

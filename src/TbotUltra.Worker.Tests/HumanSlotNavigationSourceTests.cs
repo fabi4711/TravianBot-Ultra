@@ -77,6 +77,31 @@ public sealed class HumanSlotNavigationSourceTests
         Assert.Contains("WaitForSelectorState.Visible", overview, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void SlotEntry_RecoversNavigationThatFinishesAfterClickTimeout()
+    {
+        var navigation = ReadSource("Core", "TravianClient.Navigation.cs");
+        var click = Slice(navigation, "private async Task<bool> TryClickExactOverviewSlotAsync", "private async Task OpenVillageOverviewAsync");
+
+        Assert.Contains("WaitForExactSlotAfterClickTimeoutAsync(slotId, cancellationToken)", click, StringComparison.Ordinal);
+        Assert.Contains("throw new TransientNavigationException", click, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SlotEntry_UsesHitTestedWallPointAndSafelyReloadsUnusableBuildPage()
+    {
+        var navigation = ReadSource("Core", "TravianClient.Navigation.cs");
+        var slotEntry = Slice(navigation, "private async Task OpenSlotFromOverviewAsync", "private async Task<bool> TryClickExactOverviewSlotAsync");
+        var click = Slice(navigation, "private async Task<bool> TryClickExactOverviewSlotAsync", "private async Task OpenVillageOverviewAsync");
+
+        Assert.Contains("await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken);", slotEntry, StringComparison.Ordinal);
+        Assert.Contains("catch (TimeoutException)", slotEntry, StringComparison.Ordinal);
+        Assert.Contains("CurrentPageHasUsableTravianShellAsync(cancellationToken)", slotEntry, StringComparison.Ordinal);
+        Assert.Contains("FindExactSlotClickPointAsync", click, StringComparison.Ordinal);
+        Assert.Contains("new Position { X = (float)clickPoint[0], Y = (float)clickPoint[1] }", click, StringComparison.Ordinal);
+        Assert.Contains("ClickLocatorAsync(candidate", click, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(22)]
     [InlineData(34)]

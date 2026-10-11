@@ -4,6 +4,21 @@ namespace TbotUltra.Desktop.Tests;
 
 public sealed class AlarmClassificationTests
 {
+    [Fact]
+    public void OneWorkerFailureHasSameAlarmSignatureInQueueAndLoopDiagnostics()
+    {
+        const string context = "[context account='account' task='upgrade_building_to_level' village='ELS' xy='-121|82']";
+        var worker = $"[upgrade_building_to_level FAILED] after 65,3s: TimeoutException: Page did not reach a ready state. {context}";
+        var queue = $"[queue] FAIL id=abc task='upgrade_building_to_level' village='ELS' after 65,4s: TimeoutException: Page did not reach a ready state. {context}";
+        var loop = $"[LOOP 134] FAIL 65,4s | TimeoutException: Page did not reach a ready state. {context}";
+
+        Assert.Equal(MainWindow.AlarmIncidentSignature(worker), MainWindow.AlarmIncidentSignature(queue));
+        Assert.Equal(MainWindow.AlarmIncidentSignature(worker), MainWindow.AlarmIncidentSignature(loop));
+        Assert.True(MainWindow.IsFollowOnFailureDiagnostic(queue));
+        Assert.True(MainWindow.IsFollowOnFailureDiagnostic(loop));
+        Assert.False(MainWindow.IsFollowOnFailureDiagnostic(worker));
+    }
+
     [Theory]
     [InlineData("[farm-list] send: 'Rainbow' marked sent (response=success+error; Travian processed the Start request).")]
     [InlineData("[farm-list] start-all: 'Steppes' marked sent (response=error; Travian processed the Start request).")]

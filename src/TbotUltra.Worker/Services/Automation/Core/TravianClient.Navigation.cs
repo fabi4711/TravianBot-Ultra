@@ -19,14 +19,19 @@ public sealed partial class TravianClient
         ILocator locator,
         string actionName,
         CancellationToken cancellationToken,
-        int? timeoutMs = null)
+        int? timeoutMs = null,
+        Position? position = null)
     {
         await EnsureAccountAccessAllowedAsync(cancellationToken);
         var field = locator.ToString() ?? "unknown-locator";
         using var trace = _browserTrace.BeginOperation("CLICK", actionName, $"field={field}");
         try
         {
-            await locator.ClickAsync(new LocatorClickOptions { Timeout = timeoutMs ?? _config.TimeoutMs })
+            await locator.ClickAsync(new LocatorClickOptions
+            {
+                Timeout = timeoutMs ?? _config.TimeoutMs,
+                Position = position,
+            })
                 .WaitAsync(cancellationToken);
             trace.Complete("success");
         }
@@ -549,11 +554,27 @@ public sealed partial class TravianClient
             return;
         }
 
-        await WaitForPageReadyAsync(cancellationToken);
+        try
+        {
+            await WaitForPageReadyAsync(cancellationToken);
+        }
+        catch (TimeoutException) when (TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
+        {
+            // The overview click has already reached this read-only page. A broken response can
+            // leave Chromium at the right URL without a usable Travian shell; reopen that exact
+            // slot once, never repeat the click that initiated the navigation.
+            Notify($"[slot-nav] slot {slotId} build page remained unusable after its overview click; reopening the exact slot once.");
+            await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken);
+        }
         if (!TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
         {
             throw new InvalidOperationException(
                 $"Cannot open slot {slotId}: slot click did not reach its build page. Current page: '{_page.Url}'.");
+        }
+        if (!await CurrentPageHasUsableTravianShellAsync(cancellationToken))
+        {
+            throw new TransientNavigationException(
+                $"Slot {slotId} reached its exact build URL without a usable Travian page; no second click was attempted.");
         }
 
         Notify($"[slot-nav] opened slot {slotId} via {(isResourceField ? "Dorf1" : "Dorf2")} link.");
@@ -604,40 +625,57 @@ public sealed partial class TravianClient
 
                 // A wall can expose several visible SVG layers. Do not click a layer whose
                 // center belongs to another slot or to the village-content overlay.
-                var ownsClickPoint = await candidate.EvaluateAsync<bool>(
-                    """
-                    node => {
-                      const rect = node.getBoundingClientRect();
-                      if (rect.width <= 0 || rect.height <= 0) return false;
-                      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-                      if (!hit) return false;
-                      if (hit === node || node.contains(hit)) return true;
-                      const slot = node.closest('[data-aid]');
-                      const hitSlot = hit.closest('[data-aid]');
-                      return !!slot && !!hitSlot
-                        && hitSlot.getAttribute('data-aid') === slot.getAttribute('data-aid');
-                    }
-                    """);
-                if (!ownsClickPoint)
+                var clickPoint = await FindExactSlotClickPointAsync(candidate, slotId);
+                if (clickPoint is null)
                 {
                     Notify($"[slot-nav] slot {slotId} candidate {i + 1}/{count} does not own its click point; skipped.");
                     continue;
                 }
 
-                await ClickLocatorAsync(
-                    candidate,
-                    $"open slot {slotId} from overview (candidate {i + 1}/{count})",
-                    cancellationToken,
-                    Math.Min(_config.TimeoutMs, 3000));
+                if (slotId == 40)
+                {
+                    // The wall is a concave SVG. Its bounding-box center can hit the village
+                    // overlay, so click the verified visible path point rather than its center.
+                    Notify($"[slot-nav] clicking verified wall point for slot {slotId} candidate {i + 1}/{count}.");
+                    await ClickLocatorAsync(candidate,
+                        $"open wall slot {slotId} from overview (candidate {i + 1}/{count})",
+                        cancellationToken, Math.Min(_config.TimeoutMs, 3000),
+                        new Position { X = (float)clickPoint[0], Y = (float)clickPoint[1] });
+                    return true;
+                }
+
+                await ClickLocatorAsync(candidate, $"open slot {slotId} from overview (candidate {i + 1}/{count})",
+                    cancellationToken, Math.Min(_config.TimeoutMs, 3000));
                 return true;
             }
             catch (OperationCanceledException)
             {
                 throw;
             }
-            catch (Exception ex) when (ex is PlaywrightException or TimeoutException)
+            catch (Exception ex) when (ex is not TransientNavigationException
+                && ex is PlaywrightException or TimeoutException)
             {
                 Notify($"[slot-nav] slot {slotId} candidate {i + 1}/{count} was not actionable: {ex.Message}");
+                if (TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
+                {
+                    Notify($"[slot-nav] slot {slotId} click reached its exact build page after Playwright timed out.");
+                    return true;
+                }
+
+                var clickWasDispatched = ex.Message.Contains("waiting for scheduled navigations to finish", StringComparison.OrdinalIgnoreCase)
+                    || ex.Message.Contains("click action done", StringComparison.OrdinalIgnoreCase);
+                if (clickWasDispatched)
+                {
+                    if (await WaitForExactSlotAfterClickTimeoutAsync(slotId, cancellationToken))
+                    {
+                        Notify($"[slot-nav] slot {slotId} click reached its exact build page after Playwright timed out.");
+                        return true;
+                    }
+
+                    throw new TransientNavigationException(
+                        $"Slot {slotId} click navigation timed out after safe retries; no second click was attempted.", ex);
+                }
+
                 await Task.Delay(300, cancellationToken);
                 if (!IsCurrentUrlForPath(overviewPath))
                 {
@@ -648,6 +686,57 @@ public sealed partial class TravianClient
 
         return false;
     }
+
+    private async Task<bool> WaitForExactSlotAfterClickTimeoutAsync(int slotId, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
+            {
+                return true;
+            }
+
+            if (attempt < 49)
+            {
+                await Task.Delay(100, cancellationToken);
+            }
+        }
+
+        return false;
+    }
+
+    private static Task<double[]?> FindExactSlotClickPointAsync(ILocator candidate, int slotId)
+        => candidate.EvaluateAsync<double[]?>(
+            """
+            (node, slotId) => {
+              const rect = node.getBoundingClientRect();
+              if (rect.width <= 0 || rect.height <= 0) return null;
+              const owns = (x, y) => {
+                const hit = document.elementFromPoint(x, y);
+                const slot = hit?.closest('[data-aid]');
+                if (!slot || Number(slot.getAttribute('data-aid')) !== slotId) return false;
+                if (slotId !== 40) return hit === node || node.contains(hit)
+                  || slot.getAttribute('data-aid') === node.closest('[data-aid]')?.getAttribute('data-aid');
+                if (hit !== node && !node.contains(hit)) return false;
+                const action = node.getAttribute('onclick') || node.getAttribute('href') || '';
+                return /build\.php\?id=40(?:&|&amp;|'|"|$)/.test(action);
+              };
+              const cx = rect.left + rect.width / 2;
+              const cy = rect.top + rect.height / 2;
+              if (owns(cx, cy)) return [rect.width / 2, rect.height / 2];
+              if (slotId !== 40) return null;
+              // Sample the visible wall silhouette; its SVG bounding box includes empty space.
+              for (let y = 0; y < 41; y++) {
+                for (let x = 0; x < 41; x++) {
+                  const px = rect.left + rect.width * (x + .5) / 41;
+                  const py = rect.top + rect.height * (y + .5) / 41;
+                  if (owns(px, py)) return [px - rect.left, py - rect.top];
+                }
+              }
+              return null;
+            }
+            """, slotId);
 
     private async Task OpenVillageOverviewAsync(bool resourceFields, CancellationToken cancellationToken)
     {

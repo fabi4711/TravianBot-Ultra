@@ -65,6 +65,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   itself is absent. A Travian `reload=auto` can temporarily hide overview links and slots: wait for a
   settled overview with a bounded retry before declaring absence. After a failed slot click, confirm the
   browser is still on that overview before trying another layer; never click through to a different slot.
+  If Playwright times out after dispatching a slot click, wait briefly for the exact target URL and defer
+  if its outcome stays uncertain; do not click another layer. A concave wall SVG needs a hit-tested point
+  on the exact slot path, since its bounding-box center may belong to another overlay.
   Reuse an already valid target page. Construction affordability may read stock and
   capacity on the current page; visit Dorf1 only when production is needed to resolve a resource
   shortfall or the visible stock is incomplete.
