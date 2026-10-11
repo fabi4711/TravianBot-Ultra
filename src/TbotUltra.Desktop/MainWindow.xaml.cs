@@ -1672,6 +1672,17 @@ public partial class MainWindow : Window
             ActiveVillage = status.ActiveVillage,
             Villages = status.Villages.Count > 0 ? status.Villages : _lastBuildingStatus.Villages,
             Buildings = status.Buildings,
+            ActiveConstructions = status.ActiveConstructionsFromOverview
+                ? status.ActiveConstructions
+                : _lastBuildingStatus.ActiveConstructions,
+            ActiveConstructionsFromOverview = status.ActiveConstructionsFromOverview
+                || _lastBuildingStatus.ActiveConstructionsFromOverview,
+            ActiveBuildCount = status.ActiveConstructionsFromOverview
+                ? status.ActiveBuildCount
+                : _lastBuildingStatus.ActiveBuildCount,
+            IsBuildingInProgress = status.ActiveConstructionsFromOverview
+                ? status.IsBuildingInProgress
+                : _lastBuildingStatus.IsBuildingInProgress,
             Tribe = string.IsNullOrWhiteSpace(status.Tribe) || string.Equals(status.Tribe, "Unknown", StringComparison.OrdinalIgnoreCase)
                 ? _lastBuildingStatus.Tribe
                 : status.Tribe,

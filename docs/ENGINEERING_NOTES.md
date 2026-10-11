@@ -288,6 +288,10 @@ Published artifacts belong under `artifacts/`, never beside source files.
   the final target, survives slot fallback/reconciliation, and continues from level 1 through that target; templates,
   recovery, requirement repair, and storage preflight must not split this into separate construct/upgrade rows.
   Resource-field target upgrades likewise remain one queue item.
+- Template planning treats a live level-0 building as its existing level-1 instance only when the current authoritative
+  construction overview confirms a matching level-1 build (slot/GID, or an unambiguous name match when IDs are absent).
+  Then upgrade that same slot instead of attempting a duplicate; an unconfirmed level-0 building stays unbuilt.
+  Fresh authoritative construction rows must survive merging a building snapshot into the selected village's UI status.
 - Manual queue reordering persists atomically through `CreatedAt` and therefore controls FIFO selection in both Auto
   Queue and Continuous Loop. Extended row selection supports Ctrl/Shift; one move requires one group and priority,
   preserves selected order, and moves only the selected village's visible rows while hidden villages keep their

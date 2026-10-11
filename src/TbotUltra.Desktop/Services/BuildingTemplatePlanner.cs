@@ -1142,6 +1142,11 @@ public sealed class BuildingTemplatePlanner
         public static ProjectedVillageState From(VillageStatus status)
         {
             var state = new ProjectedVillageState();
+            var activeLevelOne = status.ActiveConstructionsFromOverview
+                ? ConstructionQueueState.ResolveCurrentActiveConstructions(status)
+                    .Where(item => item.Kind == ConstructionKind.Building && item.Level == 1)
+                    .ToList()
+                : [];
             foreach (var building in status.Buildings)
             {
                 if (building.SlotId is not int slotId || building.Gid is not int gid)
@@ -1150,6 +1155,20 @@ public sealed class BuildingTemplatePlanner
                 }
 
                 var level = Math.Max(0, building.Level ?? 0);
+                if (level == 0 && gid > 0)
+                {
+                    var matchingActive = activeLevelOne.Any(item =>
+                        (item.SlotId == slotId
+                            || (item.SlotId is null
+                                && status.Buildings.Count(candidate => candidate.Gid == gid && (candidate.Level ?? 0) == 0) == 1))
+                        && (item.Gid == gid
+                            || (item.Gid is null
+                                && string.Equals(Normalize(item.Name), Normalize(building.Name), StringComparison.OrdinalIgnoreCase))));
+                    if (matchingActive)
+                    {
+                        level = 1;
+                    }
+                }
                 if (level > 0 || gid > 0)
                 {
                     state.ApplyBuilding(slotId, gid, building.Name, level);

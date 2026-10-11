@@ -260,6 +260,48 @@ public sealed class BuildingTemplatePlannerTests
         Assert.Contains(result.Errors, item => item.Contains("level 20", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Plan_ManuallyStartedStorageLevelOne_UpgradesExistingSlots(bool queueExposesSlotIds)
+    {
+        var status = Status(
+            "Egyptians",
+            Building(19, "Warehouse", 0, 10),
+            Building(24, "Granary", 0, 11)) with
+        {
+            ActiveConstructions =
+            [
+                new ActiveConstruction(ConstructionKind.Building, "Warehouse", 1, 120, null,
+                    SlotId: queueExposesSlotIds ? 19 : null, Gid: queueExposesSlotIds ? 10 : null),
+                new ActiveConstruction(ConstructionKind.Building, "Granary", 1, 150, null,
+                    SlotId: queueExposesSlotIds ? 24 : null, Gid: queueExposesSlotIds ? 11 : null),
+            ],
+            ActiveConstructionsFromOverview = true,
+        };
+
+        var result = _planner.Plan(
+            [Row(10, "Warehouse", 4), Row(11, "Granary", 4)],
+            status,
+            serverSpeed: 10,
+            mainBuildingLevel: 1);
+
+        Assert.Empty(result.Errors);
+        Assert.Collection(result.Actions,
+            warehouse =>
+            {
+                Assert.Equal("upgrade_building_to_level", warehouse.TaskName);
+                Assert.Equal(19, warehouse.SlotId);
+                Assert.Equal(4, warehouse.TargetLevel);
+            },
+            granary =>
+            {
+                Assert.Equal("upgrade_building_to_level", granary.TaskName);
+                Assert.Equal(24, granary.SlotId);
+                Assert.Equal(4, granary.TargetLevel);
+            });
+    }
+
     [Fact]
     public void Plan_ResidenceQueuedAtLevel0_BlocksPalace()
     {
