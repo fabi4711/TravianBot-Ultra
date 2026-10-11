@@ -25,13 +25,13 @@ public sealed class VillageSettingsStoreTests : IDisposable
         store.Merge(new[] { village });
 
         Assert.True(store.GetEnabled(village));
-        Assert.Equal(new[] { "construction" }, store.GetEnabledGroups(village));
+        Assert.Equal(new[] { "construction", "hero" }, store.GetEnabledGroups(village));
         Assert.False(store.GetNpcTrade(village));
         Assert.True(store.GetConstructFaster(village));
     }
 
     [Fact]
-    public void Merge_MultipleInitialVillages_AllAutoEnabledAndConstructionOnly()
+    public void Merge_MultipleInitialVillages_AllAutoEnabledWithConstructionAndHero()
     {
         var store = CreateStore();
         var capital = new Info("did:1", "Capital", 0, 0, IsCapital: true);
@@ -41,8 +41,8 @@ public sealed class VillageSettingsStoreTests : IDisposable
 
         Assert.True(store.GetEnabled(capital));
         Assert.True(store.GetEnabled(second));
-        Assert.Equal(new[] { "construction" }, store.GetEnabledGroups(capital));
-        Assert.Equal(new[] { "construction" }, store.GetEnabledGroups(second));
+        Assert.Equal(new[] { "construction", "hero" }, store.GetEnabledGroups(capital));
+        Assert.Equal(new[] { "construction", "hero" }, store.GetEnabledGroups(second));
     }
 
     [Fact]
@@ -57,7 +57,7 @@ public sealed class VillageSettingsStoreTests : IDisposable
 
         Assert.True(store.GetEnabled(first));
         Assert.True(store.GetEnabled(later));
-        Assert.Equal(new[] { "construction" }, store.GetEnabledGroups(later));
+        Assert.Equal(new[] { "construction", "hero" }, store.GetEnabledGroups(later));
         Assert.False(store.GetNpcTrade(later));
         Assert.True(store.GetConstructFaster(later));
     }

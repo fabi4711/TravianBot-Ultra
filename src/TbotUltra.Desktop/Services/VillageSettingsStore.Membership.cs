@@ -90,7 +90,7 @@ public sealed partial class VillageSettingsStore
             {
                 Save();
                 _log?.Invoke(
-                    $"Village settings merged: {added} new (Auto default={DefaultAutomationEnabled}, Construction only), {updated} updated.");
+                    $"Village settings merged: {added} new (Auto default={DefaultAutomationEnabled}, Construction and Hero), {updated} updated.");
             }
         }
     }

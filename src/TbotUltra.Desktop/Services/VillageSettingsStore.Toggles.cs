@@ -378,6 +378,6 @@ public sealed partial class VillageSettingsStore
         }
     }
 
-    private static List<string> CreateDefaultEnabledGroups() => new() { DefaultEnabledGroupKey };
+    private static List<string> CreateDefaultEnabledGroups() => DefaultEnabledGroups.ToList();
 
 }

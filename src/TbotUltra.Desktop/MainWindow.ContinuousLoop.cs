@@ -1210,7 +1210,7 @@ public partial class MainWindow
     private async Task EnsureContinuousFarmListsReadyAsync(BotOptions options, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var farmingEnabled = GetContinuousLoopEnabledGroupsInOrder().Contains(QueueGroup.Farming);
+        var farmingEnabled = GetContinuousLoopConsideredGroupsInOrder().Contains(QueueGroup.Farming);
         if (!farmingEnabled || _farmingOperationBusy)
         {
             return;

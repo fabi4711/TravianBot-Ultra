@@ -688,19 +688,19 @@ public sealed record BotOptions
     public string BuildingConstructFallbackExcludedSlots { get; init; } = string.Empty;
 
     [ConfigurationKeyName(BotOptionPayloadKeys.ConstructFasterEnabled)]
-    public bool ConstructFasterEnabled { get; init; }
+    public bool ConstructFasterEnabled { get; init; } = true;
 
     [ConfigurationKeyName(BotOptionPayloadKeys.ConstructFasterMinBuildTimeEnabled)]
     public bool ConstructFasterMinBuildTimeEnabled { get; init; } = true;
 
     [ConfigurationKeyName(BotOptionPayloadKeys.ConstructFasterMinBuildMinutes)]
-    public int ConstructFasterMinBuildMinutes { get; init; } = 30;
+    public int ConstructFasterMinBuildMinutes { get; init; } = 45;
 
     [ConfigurationKeyName(BotOptionPayloadKeys.ConstructFasterRandomEnabled)]
-    public bool ConstructFasterRandomEnabled { get; init; }
+    public bool ConstructFasterRandomEnabled { get; init; } = true;
 
     [ConfigurationKeyName(BotOptionPayloadKeys.ConstructFasterRandomChancePercent)]
-    public int ConstructFasterRandomChancePercent { get; init; } = 50;
+    public int ConstructFasterRandomChancePercent { get; init; } = 80;
 
     [ConfigurationKeyName("target_building_slot_or_name")]
     public string TargetBuildingSlotOrName { get; init; } = string.Empty;

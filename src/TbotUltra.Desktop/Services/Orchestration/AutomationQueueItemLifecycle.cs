@@ -66,7 +66,7 @@ internal sealed class AutomationQueueItemLifecycle(
         {
             port.Log(
                 $"{logPrefix} SKIP task={item.TaskName}, id={item.Id} "
-                + "because automation is disabled for its village.");
+                + "because automation is disabled for this task.");
             return true;
         }
 
@@ -89,7 +89,7 @@ internal sealed class AutomationQueueItemLifecycle(
                 port.MarkDeferred(item.Id, TimeSpan.Zero);
                 port.Log(
                     $"{logPrefix} SKIP task={item.TaskName}, id={item.Id} "
-                    + "because automation was disabled for its village before execution.");
+                    + "because automation was disabled for this task before execution.");
                 return true;
             }
 

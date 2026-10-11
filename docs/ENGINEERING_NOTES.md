@@ -234,6 +234,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   form draft and remains unsaved until the user uses the normal Settings Save action.
 - Embedded Village settings have no Save step: persist each row or group-toggle change immediately; bulk
   "Check all" changes persist each affected row and publish one consolidated settings-changed notification.
+- New villages default to Auto, Construction, Hero, and Construct 25% faster ON. New Construct faster settings
+  default to Min build time ON at 45 minutes and Random ON at 80%; preserve explicit saved choices and legacy
+  villages' missing group selections.
 - Farming requires confirmed active Gold Club. Dashboard and Village settings must project Farming as OFF and
   non-clickable when Gold Club is false or unknown, and execution gating must enforce the same rule.
 - Troop training has three amount modes: Maximum, Keep resources, and Random range. A finite max-queue setting
@@ -244,7 +247,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   those multi-step operations. The Farming panel is account-global: changing the selected village must never replace
   its rows, enabled state, or timers from a village-status cache; only the workflow's account snapshot/projection may
   replace that view. The account-wide `Send all enabled` mode must have at most one active runtime queue item
-  regardless of village count; its normal configured dispatch interval still controls retries.
+  regardless of village count; its normal configured dispatch interval still controls retries. Dispatch eligibility
+  is account-wide: any enabled village with Farming on permits `send_farmlists`, regardless of the queue item's
+  legacy village metadata. The worker uses the current village or another owned Rally Point, not that metadata.
 - Hero attribute automation uses account-scoped absolute maximums (0-100) keyed by attribute; missing or invalid
   values default to 100. Read the four live Official attribute inputs before every plus click, never cross a maximum,
   and do not requeue point spending when the latest complete snapshot shows every configured maximum is reached.
