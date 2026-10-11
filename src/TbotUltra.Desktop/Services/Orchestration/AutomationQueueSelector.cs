@@ -169,7 +169,9 @@ internal static class AutomationQueueSelector
                 selectionPlan.OrderedItemsByGroup[group],
                 villageKeysByItemId,
                 villageKey,
-                includeVillageLess: group == QueueGroup.Hero);
+                // Account-wide runtime items (Hero, resource transfer, reinforcements) carry no village and
+                // would otherwise starve while village batches keep the loop busy.
+                includeVillageLess: true);
             var candidate = SelectReadyItemWithinGroup(
                 group,
                 villageItems,
