@@ -187,17 +187,19 @@ public sealed class ContinuousRuntimeItemPreparationTests
     }
 
     [Fact]
-    public async Task FarmingPreparation_SchedulesFarmListAllianceCheckOnce()
+    public async Task FarmingPreparation_SchedulesFarmListAllianceCheckInAFarmingVillage()
     {
         var port = new InMemoryPort
         {
             EnabledGroups = [QueueGroup.Farming],
             ConsideredGroups = [QueueGroup.Farming],
+            Villages = [new AutomationRuntimeVillage("1:2", "Alpha", null, false, 1, 2)],
         };
 
         await new ContinuousRuntimeItemPreparation(port).PrepareAsync(new BotOptions(), default);
 
         Assert.Equal(TimeSpan.Zero, Assert.Single(port.FarmListAllianceCheckDelays));
+        Assert.Equal("1:2", Assert.Single(port.FarmListAllianceCheckPayloads)[BotOptionPayloadKeys.TargetVillageKey]);
     }
 
     [Fact]
@@ -320,8 +322,10 @@ public sealed class ContinuousRuntimeItemPreparationTests
             BotOptions options,
             IReadOnlyList<string> selectedSources) => [];
         public List<TimeSpan> FarmListAllianceCheckDelays { get; } = [];
-        public bool ScheduleFarmListAllianceCheck(TimeSpan delay)
+        public List<Dictionary<string, string>> FarmListAllianceCheckPayloads { get; } = [];
+        public bool ScheduleFarmListAllianceCheck(Dictionary<string, string> payload, TimeSpan delay)
         {
+            FarmListAllianceCheckPayloads.Add(payload);
             FarmListAllianceCheckDelays.Add(delay);
             return true;
         }
