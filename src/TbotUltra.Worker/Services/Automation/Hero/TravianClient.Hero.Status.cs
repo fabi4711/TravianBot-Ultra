@@ -122,7 +122,7 @@ public sealed partial class TravianClient
         var status = await ReadHeroStatusAsync(cancellationToken);
         var sidebar = await ReadHeroSidebarStatusAsync(cancellationToken);
         var heroHpFromSidebar = await ReadHeroHpFromCurrentPageAsync(cancellationToken);
-        var inVillage = await IsHeroInActiveVillageAsync(cancellationToken);
+        var presence = await ReadHeroPresenceAsync(cancellationToken);
         var hasUnassignedPointsSignal = status.UnassignedPoints > 0 || await HasHeroLevelUpIndicatorAsync(cancellationToken);
 
         var hasUsefulSignals = status.Exists
@@ -136,27 +136,29 @@ public sealed partial class TravianClient
             status = await ReadHeroStatusAsync(cancellationToken);
             sidebar = await ReadHeroSidebarStatusAsync(cancellationToken);
             heroHpFromSidebar = await ReadHeroHpFromCurrentPageAsync(cancellationToken);
-            inVillage = await IsHeroInActiveVillageAsync(cancellationToken);
+            presence = await ReadHeroPresenceAsync(cancellationToken);
             hasUnassignedPointsSignal = status.UnassignedPoints > 0 || await HasHeroLevelUpIndicatorAsync(cancellationToken);
         }
 
-        PublishHeroRuntimeStatus(status, inVillage);
+        PublishHeroRuntimeStatus(status, presence);
 
-        return new HeroQuickStatus(status, sidebar, inVillage, heroHpFromSidebar, hasUnassignedPointsSignal);
+        return new HeroQuickStatus(status, sidebar, presence, heroHpFromSidebar, hasUnassignedPointsSignal);
     }
 
-    private void PublishHeroRuntimeStatus(HeroStatus status, bool inVillage)
+    private void PublishHeroRuntimeStatus(HeroStatus status, HeroPresence presence)
     {
         var isDead = status.IsDead;
         var isReviving = string.Equals(status.State, "Reviving", StringComparison.OrdinalIgnoreCase);
-        var isAway = !inVillage && !isDead && !isReviving;
+        var isAway = presence == HeroPresence.Away && !isDead && !isReviving;
         var display = status.IsDead
             ? "Dead"
             : isReviving
                 ? "Reviving"
-                : inVillage
+                : presence == HeroPresence.Home
                     ? "Ready"
-                    : status.MovementState ?? "Away";
+                    : presence == HeroPresence.Away
+                        ? status.MovementState ?? "Away"
+                        : "Unknown";
         PublishHeroRuntimeStatus(display, isAway, isDead, isReviving);
     }
 
@@ -273,7 +275,7 @@ public sealed partial class TravianClient
         await WaitForPageReadyAsync(cancellationToken);
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
         var status = await ReadHeroStatusAsync(cancellationToken);
-        PublishHeroRuntimeStatus(status, inVillage: false);
+        PublishHeroRuntimeStatus(status, HeroPresence.Away);
         return status.SecondsUntilReturn ?? await ReadHeroReturnSecondsAsync(cancellationToken);
     }
 

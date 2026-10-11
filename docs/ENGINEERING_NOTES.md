@@ -904,6 +904,10 @@ Published artifacts belong under `artifacts/`, never beside source files.
   the adventure result page or the global `heroRunning` status on any current Official page after a bounded render
   wait; visit Dorf1 once only when those signals stay ambiguous. The configured Hero
   restart delay also applies to the first ready observation after login, before navigating to Adventures.
+- Adventure navigation requires an explicit live Home observation from the active `.heroStatus > a` icon. Hidden
+  duplicate icons, missing DOM, parse failures, and unrelated text are Unknown rather than Home; retry the current
+  DOM once without navigation, then defer. Recheck immediately before the first Adventures navigation, with every
+  running, reinforcing, or scoped movement-timer signal taking precedence over a stale home signal.
 - Automatic ointment use is triggered only for a home, living Hero with an available adventure when HP reaches or
   falls below the configured adventure minimum. Identify the inventory item by Official Travian's `item106`
   contract (with `inventory_5` as a fixture-backed fallback), pace both clicks, and verify live HP after Use. A
