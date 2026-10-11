@@ -658,7 +658,7 @@ public sealed class PanelServiceContractTests : IDisposable
         var automation = new RecordingFarmListsAutomationAdapter
         {
             ContinuousLoopRunning = true,
-            StopCompletionDelay = TimeSpan.FromMilliseconds(300),
+            StopCompletionSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously),
         };
         var workflow = new FarmListsWorkflow(
             new RecordingFarmingClient(),
@@ -679,7 +679,8 @@ public sealed class PanelServiceContractTests : IDisposable
             cancellation.Token));
         Assert.Equal(0, automation.StartContinuousLoopCount);
 
-        await Task.Delay(550);
+        automation.StopCompletionSignal!.SetResult(true);
+        await automation.ContinuousLoopStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         Assert.True(automation.ContinuousLoopRunning);
         Assert.Equal(1, automation.StartContinuousLoopCount);
@@ -855,6 +856,9 @@ public sealed class PanelServiceContractTests : IDisposable
         public IReadOnlyList<QueueItem> QueueItems { get; set; } = [];
         public Dictionary<string, string>? UpdatedPayload { get; private set; }
         public TimeSpan? StopCompletionDelay { get; set; }
+        public TaskCompletionSource<bool>? StopCompletionSignal { get; set; }
+        public TaskCompletionSource<bool> ContinuousLoopStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool IgnoreStopRequest { get; set; }
         public int StartContinuousLoopCount { get; private set; }
         public void ClearPendingRestarts() { }
@@ -862,6 +866,18 @@ public sealed class PanelServiceContractTests : IDisposable
         {
             if (IgnoreStopRequest)
             {
+                return;
+            }
+
+            if (StopCompletionSignal is { } stopCompletionSignal)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await stopCompletionSignal.Task;
+                    ContinuousLoopRunning = false;
+                    AutoQueueRunning = false;
+                    UiBusy = false;
+                });
                 return;
             }
 
@@ -885,6 +901,7 @@ public sealed class PanelServiceContractTests : IDisposable
         {
             StartContinuousLoopCount++;
             ContinuousLoopRunning = true;
+            ContinuousLoopStarted.TrySetResult(true);
         }
         public Task StartAutoQueueAsync()
         {

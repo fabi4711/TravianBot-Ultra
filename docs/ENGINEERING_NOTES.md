@@ -541,6 +541,10 @@ Published artifacts belong under `artifacts/`, never beside source files.
 - Queue Active/History grids use star sizing with explicit per-column `MinWidth` and disabled user resizing in both
   the embedded panel and Pop out. A narrow viewport must scroll horizontally; never allow a header drag or an early
   hidden-tab measurement to collapse queued task columns into apparently blank rows.
+- Queue History contains every terminal queue item (`Succeeded`, `Failed`, or `Canceled`) across all groups. Display
+  and sort it newest-first by terminal `UpdatedAt`, never by queue creation time. For successful construction items this
+  timestamp is written immediately after Travian confirms the build, before post-success UI refresh; present it as the
+  construction start time (the generic column is labelled `Started / finished` because other task groups also appear).
 - The Incoming attacks grid follows the same constraint: every column has an explicit `MinWidth` and user resizing
   is disabled, so grouped attack rows remain readable and a narrow viewport scrolls instead of collapsing columns.
 - Enumerate mutable collections through immutable snapshots when sanitizing/exporting.
