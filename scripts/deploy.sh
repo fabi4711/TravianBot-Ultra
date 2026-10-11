@@ -153,7 +153,7 @@ if [ -z "$started" ]; then
 fi
 
 for attempt in $(seq 1 24); do
-  if curl -fsS -o /dev/null "http://$HOST:${HOST_PORT:-8090}/health"; then
+  if curl -fs -o /dev/null "http://$HOST:${HOST_PORT:-8090}/health"; then
     break
   fi
   [ "$attempt" = 24 ] && { echo "✗ http://$HOST:${HOST_PORT:-8090}/health did not answer within 2 minutes" >&2; exit 1; }
