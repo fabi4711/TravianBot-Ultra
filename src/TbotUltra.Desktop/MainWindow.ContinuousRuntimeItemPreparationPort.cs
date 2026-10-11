@@ -194,8 +194,8 @@ public partial class MainWindow
             BotOptions options,
             IReadOnlyList<string> selectedSources) =>
             owner.BuildAutomaticReinforcementPayload(options, selectedSources);
-        public bool ScheduleFarmListAllianceCheck(TimeSpan delay) =>
-            owner.ScheduleFarmListAllianceCheck(delay);
+        public bool ScheduleFarmListAllianceCheck(Dictionary<string, string> payload, TimeSpan delay) =>
+            owner.ScheduleFarmListAllianceCheck(payload, delay);
         public bool ScheduleReinforcementSend(
             Dictionary<string, string> payload,
             TimeSpan delay,
