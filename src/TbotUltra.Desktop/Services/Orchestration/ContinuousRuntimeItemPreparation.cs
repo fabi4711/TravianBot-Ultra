@@ -56,6 +56,7 @@ internal interface IContinuousRuntimeItemPreparationPort
     Dictionary<string, string> BuildReinforcementPayload(
         BotOptions options,
         IReadOnlyList<string> selectedSources);
+    bool ScheduleFarmListAllianceCheck(TimeSpan delay);
     bool ScheduleReinforcementSend(
         Dictionary<string, string> payload,
         TimeSpan delay,
@@ -120,6 +121,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             options,
             onlyVillage?.Key,
             cancellationToken);
+        PrepareFarmListAllianceCheckItem(runtimeItems, consideredGroups, queueItems, onlyVillage?.Key);
         PrepareResourceTransferItem(runtimeItems, enabledGroups, options, onlyVillage?.Key);
         PrepareReinforcementItem(runtimeItems, enabledGroups, queueItems, options, onlyVillage?.Key);
     }
@@ -412,6 +414,25 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
                 ? $"Continuous farming Send all queued once for the account via village '{village.Name}'."
                 : $"Continuous farming queued for village '{village.Name}'.");
         }
+    }
+
+    private void PrepareFarmListAllianceCheckItem(
+        AutomationRuntimeItemReconciler runtimeItems,
+        IReadOnlyList<QueueGroup> consideredGroups,
+        IReadOnlyList<QueueItem> queueItems,
+        string? onlyVillageKey)
+    {
+        if (onlyVillageKey is not null
+            || !consideredGroups.Contains(QueueGroup.Farming)
+            || port.FarmingBlockedForOtherReason
+            || runtimeItems.HasActive("check_farmlists_alliance"))
+        {
+            return;
+        }
+
+        var jitter = TimeSpan.FromMinutes(Random.Shared.Next(-120, 121));
+        var delay = ContinuousLoopSelector.ResolveFarmListAllianceCheckDelay(queueItems, DateTimeOffset.UtcNow, jitter);
+        port.ScheduleFarmListAllianceCheck(delay);
     }
 
     private void PrepareResourceTransferItem(
