@@ -38,6 +38,7 @@ public partial class MainWindow
                 {
                     RefreshFarmListsItemsControl();
                     SyncFarmingControlsEnabledState();
+                    TickFarmListCountdowns();
                     UpdateNextFarmListSendDisplay();
                 }
                 else if (ReferenceEquals(targetTab, DashboardTabItem))

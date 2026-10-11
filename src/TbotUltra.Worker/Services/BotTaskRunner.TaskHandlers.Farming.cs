@@ -82,6 +82,15 @@ public sealed partial class BotTaskRunner
                                 "Automatic", entry.Response ?? "confirmed", null);
                         }), context.Log);
                     context.Log($"[farm-list] saved history for {sentLists.Count} confirmed automatic send(s).");
+                    try
+                    {
+                        context.Runner.FarmListHistoryUpdated?.Invoke(
+                            new FarmListHistoryUpdated(activeAccount, context.Options.BaseUrl));
+                    }
+                    catch (Exception notificationException)
+                    {
+                        context.Log($"[farm-list] history was saved, but its UI notification failed: {notificationException.Message}");
+                    }
                 }
                 catch (Exception ex)
                 {

@@ -109,6 +109,7 @@ public sealed partial class BotTaskRunner
     public Func<ManualLoginConfirmationRequest, CancellationToken, Task<bool>>? ManualLoginConfirmationRequested { get; set; }
     public Func<LobbyWorldServerResolution, CancellationToken, Task>? LobbyWorldServerResolved { get; set; }
     public event Action<FarmLossDestinationChange>? FarmLossDestinationChanged;
+    public event Action<FarmListHistoryUpdated>? FarmListHistoryUpdated;
     public event Action<VerifiedActiveVillage>? ActiveVillageVerified;
     public event Action<ConstructionQueueObservation>? ConstructionQueueObserved;
     public event Action<WatchtowerStatusObservation>? WatchtowerStatusObserved;

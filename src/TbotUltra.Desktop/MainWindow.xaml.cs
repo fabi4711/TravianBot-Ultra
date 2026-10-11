@@ -127,6 +127,7 @@ public partial class MainWindow : Window
     private readonly TroopTrainingPanelService _troopTrainingPanelService;
     private readonly QueuePanelService _queuePanelService;
     private readonly DispatcherTimer _clockTimer;
+    private readonly DispatcherTimer _farmingCountdownTimer;
     private bool _isUiPresentationPulse;
     private readonly DispatcherTimer _copyFeedbackTimer;
     private readonly DispatcherTimer _inboxRefreshTimer;
@@ -494,6 +495,7 @@ public partial class MainWindow : Window
         _troopTrainingPanelService = new TroopTrainingPanelService(new DesktopTroopTrainingPanelClient(_botService), _botConfigStore, _projectRoot);
         _queuePanelService = new QueuePanelService(new DesktopQueuePanelClient(_botService));
         _botService.FarmLossDestinationChanged += OnFarmLossDestinationChanged;
+        _botService.FarmListHistoryUpdated += OnFarmListHistoryUpdated;
         _botService.ActiveVillageVerified += OnActiveVillageVerified;
         _botService.ConstructionQueueObserved += OnConstructionQueueObserved;
         _botService.WatchtowerStatusObserved += OnWatchtowerStatusObserved;
@@ -538,7 +540,6 @@ public partial class MainWindow : Window
                 UpdateSessionPacingUi();
                 TickPreSleepConstructionFill();
                 HandleBrowserClosedSignal();
-                TickFarmListCountdowns();
                 TickAutomationLoopCountdowns();
                 TickIncomingAttacks(serverNow);
                 TickTroopEvasion(serverNow);
@@ -591,6 +592,35 @@ public partial class MainWindow : Window
             }
         };
         _clockTimer.Start();
+
+        _farmingCountdownTimer = new DispatcherTimer(DispatcherPriority.Render)
+        {
+            Interval = TimeSpan.FromSeconds(1),
+        };
+        _farmingCountdownTimer.Tick += (_, _) =>
+        {
+            if (!FarmingPanelControl.IsVisible)
+            {
+                return;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                TickFarmListCountdowns();
+                UpdateNextFarmListSendDisplay();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Farming countdown tick failed: {ex}");
+            }
+            finally
+            {
+                stopwatch.Stop();
+                ReportSlowUiWork("Farming 1 Hz UI pulse", stopwatch.Elapsed);
+            }
+        };
+        _farmingCountdownTimer.Start();
 
         _copyFeedbackTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.8) };
         _copyFeedbackTimer.Tick += (_, _) =>

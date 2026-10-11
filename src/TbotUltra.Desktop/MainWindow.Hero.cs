@@ -405,6 +405,7 @@ public partial class MainWindow
     {
         _automationDesk.Updated -= AutomationDesk_Updated;
         _botService.FarmLossDestinationChanged -= OnFarmLossDestinationChanged;
+        _botService.FarmListHistoryUpdated -= OnFarmListHistoryUpdated;
         _botService.ActiveVillageVerified -= OnActiveVillageVerified;
         _botService.ConstructionQueueObserved -= OnConstructionQueueObserved;
         _botService.WatchtowerStatusObserved -= OnWatchtowerStatusObserved;

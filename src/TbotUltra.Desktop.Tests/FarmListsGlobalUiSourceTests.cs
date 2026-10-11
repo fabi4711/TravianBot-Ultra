@@ -7,6 +7,20 @@ namespace TbotUltra.Desktop.Tests;
 public sealed class FarmListsGlobalUiSourceTests
 {
     [Fact]
+    public void FarmingCountdown_UsesItsOwnOneSecondUiPulse()
+    {
+        var projectRoot = ProjectRootLocator.FindProjectRoot();
+        var source = File.ReadAllText(Path.Combine(
+            projectRoot, "src", "TbotUltra.Desktop", "MainWindow.xaml.cs"));
+        var pulse = source[source.IndexOf("_farmingCountdownTimer =", StringComparison.Ordinal)..];
+
+        Assert.Contains("new DispatcherTimer(DispatcherPriority.Render)", pulse, StringComparison.Ordinal);
+        Assert.Contains("Interval = TimeSpan.FromSeconds(1)", pulse, StringComparison.Ordinal);
+        Assert.Contains("TickFarmListCountdowns();", pulse, StringComparison.Ordinal);
+        Assert.Contains("UpdateNextFarmListSendDisplay();", pulse, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void HistoryGrid_KeepsReferenceColumnOrderAndReadableMinimumWidths()
     {
         var projectRoot = ProjectRootLocator.FindProjectRoot();

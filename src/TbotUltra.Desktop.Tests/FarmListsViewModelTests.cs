@@ -9,6 +9,20 @@ namespace TbotUltra.Desktop.Tests;
 
 public sealed class FarmListsViewModelTests
 {
+    [Fact]
+    public void FarmListCountdown_CatchesUpAfterDelayedUiTick()
+    {
+        var now = new DateTimeOffset(2026, 10, 11, 12, 0, 0, TimeSpan.Zero);
+        var clock = new MutableTimeProvider(now);
+        var row = new FarmListStatusRow(clock) { RemainingSeconds = 30 };
+
+        clock.Advance(TimeSpan.FromSeconds(5));
+        row.TickOneSecond();
+
+        Assert.Equal(25, row.RemainingSeconds);
+        Assert.Equal("00:25", row.TimerText);
+    }
+
     private static FarmListStatusRow Real(string name, int? remainingSeconds = null) =>
         new()
         {
@@ -18,6 +32,15 @@ public sealed class FarmListsViewModelTests
             IntervalMinMinutesText = "15",
             IntervalMaxMinutesText = "30",
         };
+
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        private DateTimeOffset _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public void Advance(TimeSpan duration) => _now += duration;
+    }
 
     [Fact]
     public void EnsurePlaceholderRow_EmptyCollectionGetsOnePlaceholder()

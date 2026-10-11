@@ -15,6 +15,7 @@ public partial class FarmingPanel : UserControl
 
     internal event Action? HistoryRequested;
     internal event Action? ClearHistoryRequested;
+    internal bool IsHistoryVisible => IsVisible && ReferenceEquals(FarmingTabControl.SelectedItem, FarmHistoryTabItem);
     internal void SetHistory(IReadOnlyList<TbotUltra.Core.Farming.FarmListHistoryEntry> entries)
         => FarmHistoryGrid.ItemsSource = entries;
 

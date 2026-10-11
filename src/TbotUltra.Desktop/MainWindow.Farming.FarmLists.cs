@@ -230,12 +230,15 @@ public partial class MainWindow
             var snapshot = sendHappened
                 ? await TryApplyFarmListsSnapshotAsync(options)
                 : null;
-            if (snapshot is not null)
+            if (snapshot is null)
             {
-                return;
+                await RefreshFarmListsFromServerAsync(options, _loopController.AcquireSessionScopeToken());
             }
 
-            await RefreshFarmListsFromServerAsync(options, _loopController.AcquireSessionScopeToken());
+            if (sendHappened)
+            {
+                await RefreshVisibleFarmListHistoryAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -680,6 +683,7 @@ public partial class MainWindow
             var options = ApplySelectedVillageToOptions(LoadBotOptions());
             await EnsureChromiumInstalledAsync();
             await _farmListsWorkflow.DispatchOneAsync(options, list, operationToken);
+            await RefreshVisibleFarmListHistoryAsync();
             UpdateFarmingUiState();
             CompleteOperation(operationId, operationSw, $"Sent '{list.Name}'.");
         }
@@ -739,6 +743,10 @@ public partial class MainWindow
                 operationToken);
             UpdateGoldClubInfo(dispatch.View.IsAvailable);
             await ApplyFarmListsViewToUiAsync(dispatch.View);
+            if (dispatch.SentCount > 0)
+            {
+                await RefreshVisibleFarmListHistoryAsync();
+            }
             CompleteOperation(operationId, operationSw, $"Sent enabled farmlists ({dispatch.SentCount} list(s)).");
         }
         catch (OperationCanceledException)
@@ -979,20 +987,55 @@ public partial class MainWindow
         try
         {
             var generation = Interlocked.Increment(ref _farmHistoryLoadGeneration);
-            var accountName = _accountStore.ActiveAccountName();
-            var serverUrl = LoadBotOptions().BaseUrl;
+            var context = await Dispatcher.InvokeAsync(() => (
+                AccountName: _accountStore.ActiveAccountName(),
+                ServerUrl: LoadBotOptions().BaseUrl));
+            var accountName = context.AccountName;
+            var serverUrl = context.ServerUrl;
             var history = await _farmListsWorkflow.LoadHistoryAsync(serverUrl);
-            if (generation == Volatile.Read(ref _farmHistoryLoadGeneration)
-                && string.Equals(accountName, _accountStore.ActiveAccountName(), StringComparison.OrdinalIgnoreCase)
-                && string.Equals(serverUrl, LoadBotOptions().BaseUrl, StringComparison.OrdinalIgnoreCase))
+            await Dispatcher.InvokeAsync(() =>
             {
-                FarmingPanelControl.SetHistory(history);
-            }
+                if (generation == Volatile.Read(ref _farmHistoryLoadGeneration)
+                    && string.Equals(accountName, _accountStore.ActiveAccountName(), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(serverUrl, LoadBotOptions().BaseUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    FarmingPanelControl.SetHistory(history);
+                }
+            });
         }
         catch (Exception ex)
         {
             AppendLog($"[farm-list] could not load send history: {ex.Message}");
         }
+    }
+
+    private async Task RefreshVisibleFarmListHistoryAsync()
+    {
+        if (await Dispatcher.InvokeAsync(() => FarmingPanelControl.IsHistoryVisible))
+        {
+            AppendLog("[farm-list] refreshing visible send history after confirmed dispatch.");
+            await RefreshFarmListHistoryAsync();
+        }
+    }
+
+    private void OnFarmListHistoryUpdated(FarmListHistoryUpdated update)
+    {
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_shutdownInProgress
+                || !string.Equals(update.AccountName, _accountStore.ActiveAccountName(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(update.ServerUrl, LoadBotOptions().BaseUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _ = RefreshVisibleFarmListHistoryAsync();
+        }, DispatcherPriority.Render);
     }
 
     private void ClearFarmListHistory()

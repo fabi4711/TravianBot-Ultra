@@ -28,6 +28,12 @@ public sealed class DesktopBotService : IDesktopBotService
         remove => _taskRunner.FarmLossDestinationChanged -= value;
     }
 
+    public event Action<FarmListHistoryUpdated>? FarmListHistoryUpdated
+    {
+        add => _taskRunner.FarmListHistoryUpdated += value;
+        remove => _taskRunner.FarmListHistoryUpdated -= value;
+    }
+
     public event Action<VerifiedActiveVillage>? ActiveVillageVerified
     {
         add => _taskRunner.ActiveVillageVerified += value;

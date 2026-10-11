@@ -250,6 +250,8 @@ Published artifacts belong under `artifacts/`, never beside source files.
   regardless of village count; its normal configured dispatch interval still controls retries. Dispatch eligibility
   is account-wide: any enabled village with Farming on permits `send_farmlists`, regardless of the queue item's
   legacy village metadata. The worker uses the current village or another owned Rally Point, not that metadata.
+  Farming countdowns derive from elapsed time so delayed UI pulses do not slow them. Refresh an open Farming History
+  view after confirmed sends; do not poll its persisted history every second.
 - Hero attribute automation uses account-scoped absolute maximums (0-100) keyed by attribute; missing or invalid
   values default to 100. Read the four live Official attribute inputs before every plus click, never cross a maximum,
   and do not requeue point spending when the latest complete snapshot shows every configured maximum is reached.

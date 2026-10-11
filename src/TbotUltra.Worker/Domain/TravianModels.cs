@@ -510,6 +510,8 @@ public sealed record FarmLossDestinationChange(
     string VillageName,
     FarmListLossColors LossColors = FarmListLossColors.Both);
 
+public sealed record FarmListHistoryUpdated(string AccountName, string? ServerUrl);
+
 public sealed record FarmCoordinate(
     int X,
     int Y,

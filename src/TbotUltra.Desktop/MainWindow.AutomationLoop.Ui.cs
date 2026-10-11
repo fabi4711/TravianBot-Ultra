@@ -267,8 +267,6 @@ public partial class MainWindow
         {
             UpdateAutomationLoopRunningIndicators();
         }
-
-        UpdateNextFarmListSendDisplay();
     }
 
     private static bool AutomationLoopTaskFilter(object item)

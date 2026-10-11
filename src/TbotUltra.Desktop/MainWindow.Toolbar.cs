@@ -362,6 +362,7 @@ public partial class MainWindow
             _loopController.MarkClosing();
             _inboxAutoEnabled = false;
             _clockTimer.Stop();
+            _farmingCountdownTimer.Stop();
             CloseCurrentProxyUsageInterval(DateTimeOffset.UtcNow);
             CloseCurrentSessionActivityInterval(DateTimeOffset.UtcNow);
             NotifySessionPacingOnlineStopped();

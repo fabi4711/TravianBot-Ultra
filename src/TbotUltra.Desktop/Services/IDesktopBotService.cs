@@ -10,6 +10,7 @@ public interface IDesktopBotService
     long BrowserGeneration { get; }
 
     event Action<FarmLossDestinationChange>? FarmLossDestinationChanged;
+    event Action<FarmListHistoryUpdated>? FarmListHistoryUpdated;
     event Action<VerifiedActiveVillage>? ActiveVillageVerified;
     event Action<ConstructionQueueObservation>? ConstructionQueueObserved;
     event Action<WatchtowerStatusObservation>? WatchtowerStatusObserved;
