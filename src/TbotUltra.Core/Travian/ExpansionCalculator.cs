@@ -78,6 +78,35 @@ public static class ExpansionCalculator
         return new SettlerTrainingPlan(slots, freeSlots, available, toTrain, reason);
     }
 
+    /// <summary>
+    /// Seconds until the stock covers the cost at the given hourly production, or null when a missing
+    /// resource has no positive production.
+    /// </summary>
+    public static int? SecondsUntilAffordable(
+        IReadOnlyDictionary<string, long> stock,
+        IReadOnlyDictionary<string, double?> productionPerHour,
+        IReadOnlyDictionary<string, long> cost)
+    {
+        var longest = 0;
+        foreach (var key in ResourceKeys)
+        {
+            var missing = (cost.TryGetValue(key, out var needed) ? needed : 0) - (stock.TryGetValue(key, out var have) ? have : 0);
+            if (missing <= 0)
+            {
+                continue;
+            }
+
+            if (!productionPerHour.TryGetValue(key, out var production) || production is not > 0)
+            {
+                return null;
+            }
+
+            longest = Math.Max(longest, (int)Math.Ceiling(missing / production.Value * 3600d));
+        }
+
+        return longest;
+    }
+
     public static VillageFoundingReadiness EvaluateFounding(VillageFoundingState state)
     {
         var missing = new List<string>();
