@@ -62,7 +62,7 @@ public partial class MainWindow
         historyGrid.Columns.Add(new DataGridTextColumn { Header = "Village", Binding = new Binding("VillageName"), Width = new DataGridLength(1.2, DataGridLengthUnitType.Star), MinWidth = 100 });
         historyGrid.Columns.Add(new DataGridTextColumn { Header = "Completed task", Binding = new Binding("DisplayName"), Width = new DataGridLength(3, DataGridLengthUnitType.Star), MinWidth = 330 });
         historyGrid.Columns.Add(new DataGridTextColumn { Header = "Status", Binding = new Binding("Status"), Width = new DataGridLength(1, DataGridLengthUnitType.Star), MinWidth = 85 });
-        historyGrid.Columns.Add(new DataGridTextColumn { Header = "Started / finished", Binding = new Binding("HistoryAtServer"), Width = new DataGridLength(2, DataGridLengthUnitType.Star), MinWidth = 150 });
+        historyGrid.Columns.Add(new DataGridTextColumn { Header = "Started in Travian", Binding = new Binding("HistoryAtServer"), Width = new DataGridLength(2, DataGridLengthUnitType.Star), MinWidth = 150 });
 
         var closeButton = new Button
         {

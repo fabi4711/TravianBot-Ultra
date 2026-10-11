@@ -43,7 +43,7 @@ public sealed class QueueDisplayProjectionTests
     }
 
     [Fact]
-    public void Build_HistoryContainsEveryTerminalGroup()
+    public void Build_HistoryContainsOnlyTerminalConstructionItems()
     {
         var construction = Item(QueueStatus.Succeeded, runtimeOnly: false);
         construction.Group = QueueGroup.Construction;
@@ -54,10 +54,7 @@ public sealed class QueueDisplayProjectionTests
 
         var projection = QueueDisplayProjection.Build([construction, account, farming], Row);
 
-        Assert.Equal(3, projection.HistoryItems.Count);
-        Assert.Contains(construction, projection.HistoryItems);
-        Assert.Contains(account, projection.HistoryItems);
-        Assert.Contains(farming, projection.HistoryItems);
+        Assert.Same(construction, Assert.Single(projection.HistoryItems));
     }
 
     [Fact]

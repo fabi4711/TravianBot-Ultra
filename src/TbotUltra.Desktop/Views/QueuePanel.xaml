@@ -394,7 +394,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Retries" Width="0.7*" MinWidth="70" Binding="{Binding Retries}" />
-                    <DataGridTextColumn Header="Started / finished" Width="1.5*" MinWidth="150" Binding="{Binding HistoryAtServer}" />
+                    <DataGridTextColumn Header="Started in Travian" Width="1.5*" MinWidth="150" Binding="{Binding HistoryAtServer}" />
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>
