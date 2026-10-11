@@ -18,13 +18,13 @@ public sealed partial class BotTaskRunner
 
     private static async Task ExecuteFoundVillageAsync(TaskExecutionContext context)
     {
-        if (!TryParseFoundingTarget(context.Options.TargetBuildingSlotOrName, out var x, out var y))
+        if (!TryParseFoundingTarget(context.Options.TargetBuildingSlotOrName, out var x, out var y, out var tribeId))
         {
-            context.Log($"Task 'found_village' requires target_building_slot_or_name as 'xy:X|Y' (got '{context.Options.TargetBuildingSlotOrName}').");
+            context.Log($"Task 'found_village' requires target_building_slot_or_name as 'xy:X|Y' or 'xy:X|Y;tribe:N' (got '{context.Options.TargetBuildingSlotOrName}').");
             return;
         }
 
-        var result = await context.Client.FoundVillageAsync(x, y, context.CancellationToken);
+        var result = await context.Client.FoundVillageAsync(x, y, tribeId, context.CancellationToken);
         context.Log(result.Message);
         context.RecordTaskResult("found_village", result.Message);
         if (!result.Completed)
@@ -44,13 +44,24 @@ public sealed partial class BotTaskRunner
         throw new InvalidOperationException(result.Message);
     }
 
-    internal static bool TryParseFoundingTarget(string? value, out int x, out int y)
+    internal static bool TryParseFoundingTarget(string? value, out int x, out int y, out int? tribeId)
     {
         x = 0;
         y = 0;
-        var match = Regex.Match(value ?? string.Empty, @"^\s*(?:xy:)?\(?\s*(-?\d+)\s*[|/]\s*(-?\d+)\s*\)?\s*$");
-        return match.Success
-            && int.TryParse(match.Groups[1].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out x)
-            && int.TryParse(match.Groups[2].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out y);
+        tribeId = null;
+        var match = Regex.Match(value ?? string.Empty, @"^\s*(?:xy:)?\(?\s*(-?\d+)\s*[|/]\s*(-?\d+)\s*\)?\s*(?:;\s*tribe:(\d+)\s*)?$");
+        if (!match.Success
+            || !int.TryParse(match.Groups[1].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out x)
+            || !int.TryParse(match.Groups[2].Value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out y))
+        {
+            return false;
+        }
+
+        if (match.Groups[3].Success)
+        {
+            tribeId = int.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
+        }
+
+        return true;
     }
 }

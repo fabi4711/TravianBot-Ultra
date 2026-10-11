@@ -117,8 +117,9 @@ public sealed class ExpansionWorkerHelperTests
     [InlineData("-133/132", -133, 132)]
     public void TryParseFoundingTarget_ReadsCoordinates(string value, int x, int y)
     {
-        Assert.True(TbotUltra.Worker.Services.BotTaskRunner.TryParseFoundingTarget(value, out var parsedX, out var parsedY));
+        Assert.True(TbotUltra.Worker.Services.BotTaskRunner.TryParseFoundingTarget(value, out var parsedX, out var parsedY, out var tribeId));
         Assert.Equal((x, y), (parsedX, parsedY));
+        Assert.Null(tribeId);
     }
 
     [Theory]
@@ -126,7 +127,28 @@ public sealed class ExpansionWorkerHelperTests
     [InlineData("Residence")]
     public void TryParseFoundingTarget_RejectsOtherValues(string value)
     {
-        Assert.False(TbotUltra.Worker.Services.BotTaskRunner.TryParseFoundingTarget(value, out _, out _));
+        Assert.False(TbotUltra.Worker.Services.BotTaskRunner.TryParseFoundingTarget(value, out _, out _, out _));
+    }
+
+    [Fact]
+    public void TryParseFoundingTarget_ReadsTheTribe()
+    {
+        Assert.True(TbotUltra.Worker.Services.BotTaskRunner.TryParseFoundingTarget("xy:-133|132;tribe:2", out var x, out var y, out var tribeId));
+        Assert.Equal((-133, 132, 2), (x, y, tribeId));
+    }
+
+    [Fact]
+    public void SettlerTrainingSecondsLeft_UsesTheLastSettlerRow()
+    {
+        var queue = new[]
+        {
+            new TbotUltra.Worker.Domain.BuildQueueItem("1 Siedler", "0:12:42"),
+            new TbotUltra.Worker.Domain.BuildQueueItem("5 Clubswingers", "1:00:00"),
+            new TbotUltra.Worker.Domain.BuildQueueItem("2 Settlers", "0:52:42"),
+        };
+
+        Assert.Equal(3162, TbotUltra.Worker.Services.TravianClient.SettlerTrainingSecondsLeft(queue));
+        Assert.Null(TbotUltra.Worker.Services.TravianClient.SettlerTrainingSecondsLeft([]));
     }
 
     [Fact]
