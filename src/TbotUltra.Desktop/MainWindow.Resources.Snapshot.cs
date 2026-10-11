@@ -1314,18 +1314,17 @@ public partial class MainWindow
                 && string.Equals(reason, HeroDeferReasonLowHp, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
+        // Same threshold the execution uses (QueueExecutionOptionsResolver): the payload value is only an
+        // enqueue-time snapshot, and releasing on a stale lower value re-runs a task that defers again at once.
+        var threshold = Math.Clamp(options.HeroMinHpForAdventure, 1, 100);
+        if (liveHp < threshold)
+        {
+            return;
+        }
+
         var released = 0;
         foreach (var item in deferredLowHp)
         {
-            var threshold = Math.Clamp(
-                TryGetIntPayloadValue(item.Payload, BotOptionPayloadKeys.HeroMinHpForAdventure)
-                    ?? options.HeroMinHpForAdventure,
-                1,
-                100);
-            if (liveHp < threshold)
-            {
-                continue;
-            }
 
             var payload = new Dictionary<string, string>(item.Payload, StringComparer.OrdinalIgnoreCase);
             payload.Remove(HeroDeferReasonKey);
