@@ -13,7 +13,8 @@ internal sealed record ResourceTransferOptions(
     bool SendWood,
     bool SendClay,
     bool SendIron,
-    bool SendCrop);
+    bool SendCrop,
+    string SecondTargetVillageName);
 
 internal static class ResourceTransferOptionsModule
 {
@@ -21,6 +22,7 @@ internal static class ResourceTransferOptionsModule
     [
         BotOptionPayloadKeys.ResourceTransferEnabled,
         BotOptionPayloadKeys.ResourceTransferTargetVillageName,
+        BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName,
         BotOptionPayloadKeys.ResourceTransferSourceVillageNames,
         BotOptionPayloadKeys.ResourceTransferSourceThresholdPercent,
         BotOptionPayloadKeys.ResourceTransferSourceKeepPercent,
@@ -42,7 +44,8 @@ internal static class ResourceTransferOptionsModule
             configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendWood, true),
             configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendClay, true),
             configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendIron, true),
-            configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendCrop, true));
+            configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendCrop, true),
+            configuration[BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] ?? string.Empty);
 
     internal static ResourceTransferOptions Apply(
         BotOptions source,
@@ -58,7 +61,8 @@ internal static class ResourceTransferOptionsModule
             source.ResourceTransferSendWood,
             source.ResourceTransferSendClay,
             source.ResourceTransferSendIron,
-            source.ResourceTransferSendCrop);
+            source.ResourceTransferSendCrop,
+            source.ResourceTransferSecondTargetVillageName);
 
         if (payload is null)
         {
@@ -82,6 +86,10 @@ internal static class ResourceTransferOptionsModule
             else if (key.Equals(BotOptionPayloadKeys.ResourceTransferTargetVillageName, StringComparison.OrdinalIgnoreCase))
             {
                 result = result with { TargetVillageName = value };
+            }
+            else if (key.Equals(BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName, StringComparison.OrdinalIgnoreCase))
+            {
+                result = result with { SecondTargetVillageName = value };
             }
             else if (key.Equals(BotOptionPayloadKeys.ResourceTransferSourceVillageNames, StringComparison.OrdinalIgnoreCase))
             {
@@ -125,6 +133,7 @@ internal static class ResourceTransferOptionsModule
         {
             ResourceTransferEnabled = values.Enabled,
             ResourceTransferTargetVillageName = values.TargetVillageName,
+            ResourceTransferSecondTargetVillageName = values.SecondTargetVillageName,
             ResourceTransferSourceVillageNames = values.SourceVillageNames,
             ResourceTransferSourceThresholdPercent = values.SourceThresholdPercent,
             ResourceTransferSourceKeepPercent = values.SourceKeepPercent,

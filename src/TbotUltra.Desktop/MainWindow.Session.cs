@@ -1403,6 +1403,7 @@ public partial class MainWindow
             BotOptionPayloadKeys.ReinforcementsSendMinMinutes,
             BotOptionPayloadKeys.ReinforcementsSendMaxMinutes,
             BotOptionPayloadKeys.ResourceTransferTargetVillageName,
+            BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName,
             BotOptionPayloadKeys.ResourceTransferSourceVillageNames,
             BotOptionPayloadKeys.ContinuousFarmListNames,
             BotOptionPayloadKeys.ContinuousFarmListIds,

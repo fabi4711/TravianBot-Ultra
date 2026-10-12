@@ -52,6 +52,7 @@ public partial class NpcTradePanel : UserControl
     internal TextBlock TroopsCount => NpcTradeTroopsTextBlock;
     internal TextBlock BuildingsCount => NpcTradeBuildingsTextBlock;
     internal ComboBox TransferTargetVillage => ResourceTransferTargetVillageComboBox;
+    internal ComboBox TransferSecondTargetVillage => ResourceTransferSecondTargetVillageComboBox;
     internal ItemsControl TransferSourceVillages => ResourceTransferSourceVillagesItemsControl;
     internal ComboBox SourceThreshold => ResourceTransferSourceThresholdComboBox;
     internal ComboBox SourceKeep => ResourceTransferSourceKeepComboBox;
@@ -66,6 +67,7 @@ public partial class NpcTradePanel : UserControl
 
     private void ResourceTransferSetting_Changed(object sender, RoutedEventArgs e) => Host?.OnResourceTransferSettingChanged(sender, e);
     private void ResourceTransferSetting_SelectionChanged(object sender, SelectionChangedEventArgs e) => Host?.OnResourceTransferSettingSelectionChanged(sender, e);
+    private void ResourceTransferSecondTargetClearButton_Click(object sender, RoutedEventArgs e) => Host?.OnResourceTransferSecondTargetClearClicked(sender, e);
     private void QueueResourceTransferNowButton_Click(object sender, RoutedEventArgs e) => Host?.OnQueueResourceTransferNowClicked(sender, e);
     private void ResourceTransferScanVillagesButton_Click(object sender, RoutedEventArgs e) => Host?.OnResourceTransferScanVillagesClicked(sender, e);
 }

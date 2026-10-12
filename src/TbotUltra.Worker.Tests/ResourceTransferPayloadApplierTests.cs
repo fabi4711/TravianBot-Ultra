@@ -12,6 +12,7 @@ public sealed class ResourceTransferPayloadApplierTests
         {
             [BotOptionPayloadKeys.ResourceTransferEnabled] = "true",
             [BotOptionPayloadKeys.ResourceTransferTargetVillageName] = "Target",
+            [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = "Second",
             [BotOptionPayloadKeys.ResourceTransferSourceVillageNames] = "One,Two,one",
             [BotOptionPayloadKeys.ResourceTransferSourceThresholdPercent] = "101",
             [BotOptionPayloadKeys.ResourceTransferSourceKeepPercent] = "100",
@@ -26,6 +27,7 @@ public sealed class ResourceTransferPayloadApplierTests
 
         Assert.True(result.ResourceTransferEnabled);
         Assert.Equal("Target", result.ResourceTransferTargetVillageName);
+        Assert.Equal("Second", result.ResourceTransferSecondTargetVillageName);
         Assert.Equal(new[] { "One", "Two" }, result.ResourceTransferSourceVillageNames);
         Assert.Equal(100, result.ResourceTransferSourceThresholdPercent);
         Assert.Equal(99, result.ResourceTransferSourceKeepPercent);
@@ -57,6 +59,25 @@ public sealed class ResourceTransferPayloadApplierTests
         Assert.True(result.ResourceTransferEnabled);
         Assert.Equal(75, result.ResourceTransferSourceThresholdPercent);
         Assert.Equal(new[] { "Existing" }, result.ResourceTransferSourceVillageNames);
+    }
+
+    [Theory]
+    [InlineData("Kornkammer", "Rohstoffhof", new[] { "Kornkammer", "Rohstoffhof" })]
+    [InlineData("Kornkammer", "", new[] { "Kornkammer" })]
+    [InlineData("Kornkammer", "kornkammer", new[] { "Kornkammer" })]
+    [InlineData("", "Rohstoffhof", new[] { "Rohstoffhof" })]
+    public void ResolveTargetNames_KeepsPrimaryFirstAndDropsEmptyOrDuplicateSecondTarget(
+        string target,
+        string secondTarget,
+        string[] expected)
+    {
+        var options = new BotOptions
+        {
+            ResourceTransferTargetVillageName = target,
+            ResourceTransferSecondTargetVillageName = secondTarget,
+        };
+
+        Assert.Equal(expected, TbotUltra.Worker.Services.TravianClient.ResolveResourceTransferTargetNames(options));
     }
 
     [Fact]
