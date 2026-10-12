@@ -53,8 +53,7 @@ public sealed class WindowSmokeTests
                 Assert.Equal("Upgrade watchtowers...", button.Content);
 
                 Assert.Equal(7, wall.WatchtowerUpgradeBaseLevel);
-                window.ShowInTaskbar = false;
-                window.Opacity = 0;
+                WpfSmokeFixture.PrepareOffscreen(window);
                 window.Loaded += (_, _) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert.True(window.ShowDialog());
                 Assert.Equal(BuildingSlotAction.UpgradeWatchtowers, window.SelectedAction);

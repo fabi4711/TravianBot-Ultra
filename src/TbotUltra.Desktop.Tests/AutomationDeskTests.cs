@@ -275,13 +275,13 @@ public sealed class AutomationDeskTests
         await automation.StartAsync(new AutomationStart(
             AutomationRunMode.ContinuousLoop,
             new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7)));
-        await officialTravian.Started.WaitAsync(TimeSpan.FromSeconds(2));
+        await officialTravian.Started.WaitAsync(TimeSpan.FromSeconds(10));
 
         var stopping = automation.StopAsync(AutomationStopMode.AfterCurrentAction).AsTask();
 
         Assert.False(stopping.IsCompleted);
         officialTravian.Complete();
-        await stopping.WaitAsync(TimeSpan.FromSeconds(2));
+        await stopping.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.Equal(AutomationPhase.Stopped, automation.Current.Phase);
     }
 

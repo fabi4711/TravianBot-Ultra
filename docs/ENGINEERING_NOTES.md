@@ -1,6 +1,6 @@
 # Engineering Notes
 
-Last updated: 2026-10-10
+Last updated: 2026-10-12
 
 Read this file before changing architecture, selectors, paths, browser behavior, persisted state, queueing,
 or server logic. Keep it short and current: durable rules belong here; detailed decisions belong in ADRs;
@@ -29,6 +29,8 @@ The solution uses no optional .NET workloads. Keep `MSBuildEnableWorkloadResolve
 and test commands so a partial machine-wide workload installation cannot block the Desktop project.
 The local SDK also requires disabled build servers and a serial solution build; use the commands above
 or the repository verification scripts rather than a plain parallel `dotnet build`.
+Automated tests must run without visible windows whenever possible. WPF smoke tests that need `Loaded`,
+`ContentRendered`, or dialogs must use off-screen, non-activating windows rather than flashing UI on the desktop.
 
 Published artifacts belong under `artifacts/`, never beside source files.
 

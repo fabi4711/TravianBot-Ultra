@@ -22,6 +22,27 @@ public sealed class SettingsWindowTests : IDisposable
     }
 
     [Fact]
+    public void ShowWindowForTest_KeepsSettingsOffscreenAndInactive()
+    {
+        _wpf.Run(() =>
+        {
+            var window = new SettingsWindow(CreateStore(new JsonObject()));
+            try
+            {
+                ShowWindowForTest(window);
+
+                Assert.False(window.ShowInTaskbar);
+                Assert.False(window.ShowActivated);
+                Assert.True(window.Left + window.ActualWidth <= SystemParameters.VirtualScreenLeft);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void CelebrationsCategory_LoadsTownHallControlsAndRequestedTab()
     {
         _wpf.Run(() =>
@@ -182,11 +203,8 @@ public sealed class SettingsWindowTests : IDisposable
             File.WriteAllText(configPath, new JsonObject().ToJsonString());
             var activeAccount = "alice";
             var store = new BotConfigStore(configPath, _root, () => activeAccount);
-            var window = new SettingsWindow(store, taskPriorityEnabledGroups: ["construction"])
-            {
-                ShowInTaskbar = false,
-                Opacity = 0,
-            };
+            var window = new SettingsWindow(store, taskPriorityEnabledGroups: ["construction"]);
+            WpfSmokeFixture.PrepareOffscreen(window);
             window.ContentRendered += (_, _) =>
             {
                 window.SettingsVm.TaskPriority.MoveUpCommand.Execute(window.SettingsVm.TaskPriority.Rows[1]);
@@ -463,7 +481,8 @@ public sealed class SettingsWindowTests : IDisposable
                 [BotOptionPayloadKeys.SessionPacingDailyMaxHours] = 1,
             });
             var shownTitles = new List<string>();
-            using var dialogCloser = CaptureDialogs(shownTitles);
+            var dialogsOnScreen = new List<bool>();
+            using var dialogCloser = CaptureDialogs(shownTitles, dialogsOnScreen);
             var window = new SettingsWindow(store);
             try
             {
@@ -487,6 +506,7 @@ public sealed class SettingsWindowTests : IDisposable
 
                 Assert.Equal(2, shownTitles.Count(title => title == "Daily runtime warning"));
                 Assert.Contains("Enable detailed browser logging?", shownTitles);
+                Assert.DoesNotContain(true, dialogsOnScreen);
             }
             finally
             {
@@ -504,19 +524,14 @@ public sealed class SettingsWindowTests : IDisposable
         return store;
     }
 
-    private static IDisposable CaptureDialogs(ICollection<string> shownTitles)
+    private static IDisposable CaptureDialogs(ICollection<string> shownTitles, ICollection<bool>? dialogsOnScreen = null)
     {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
-        timer.Tick += (_, _) =>
+        AppDialog.BeforeModalShowForTests = dialog =>
         {
-            foreach (var dialog in Application.Current.Windows.OfType<AppDialog>().ToList())
-            {
-                shownTitles.Add(dialog.Title);
-                dialog.Close();
-            }
+            shownTitles.Add(dialog.Title);
+            dialogsOnScreen?.Add(dialog.IsVisible);
         };
-        timer.Start();
-        return new DisposableAction(timer.Stop);
+        return new DisposableAction(() => AppDialog.BeforeModalShowForTests = null);
     }
 
     private static void DrainDispatcher()
@@ -530,8 +545,7 @@ public sealed class SettingsWindowTests : IDisposable
 
     private static void ShowWindowForTest(Window window)
     {
-        window.ShowInTaskbar = false;
-        window.Opacity = 0;
+        WpfSmokeFixture.PrepareOffscreen(window);
         window.Show();
     }
 

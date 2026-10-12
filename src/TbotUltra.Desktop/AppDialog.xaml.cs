@@ -8,6 +8,10 @@ namespace TbotUltra.Desktop;
 
 public partial class AppDialog : Window
 {
+    // The WPF smoke thread captures modal requests here before ShowDialog creates a visible window.
+    [ThreadStatic]
+    internal static Action<AppDialog>? BeforeModalShowForTests;
+
     private readonly MessageBoxButton _buttons;
     private readonly MessageBoxResult _defaultResult;
     private readonly MessageBoxResult _cancelResult;
@@ -132,8 +136,7 @@ public partial class AppDialog : Window
         MessageBoxResult defaultResult)
     {
         var dialog = new AppDialog(owner, message, title, buttons, icon, defaultResult);
-        _ = dialog.ShowDialog();
-        return dialog._result;
+        return PresentDialog(dialog);
     }
 
     public static AppDialog ShowModeless(
@@ -188,8 +191,7 @@ public partial class AppDialog : Window
             accentResult: accentResult,
             warningResult: null,
             dangerResult: dangerResult);
-        _ = dialog.ShowDialog();
-        return dialog._result;
+        return PresentDialog(dialog);
     }
 
     // Custom-button dialog with rich WPF content instead of a plain text message. The optional result
@@ -227,8 +229,7 @@ public partial class AppDialog : Window
         {
             dialog.Width = Math.Clamp(width.Value, dialog.MinWidth, dialog.MaxWidth);
         }
-        _ = dialog.ShowDialog();
-        return dialog._result;
+        return PresentDialog(dialog);
     }
 
     public static MessageBoxResult ShowContent(
@@ -240,6 +241,24 @@ public partial class AppDialog : Window
         MessageBoxResult defaultResult)
     {
         var dialog = new AppDialog(owner, content, title, buttons, icon, defaultResult);
+        return PresentDialog(dialog);
+    }
+
+    private static MessageBoxResult PresentDialog(AppDialog dialog)
+    {
+        if (BeforeModalShowForTests is { } capture)
+        {
+            try
+            {
+                capture(dialog);
+                return dialog._result;
+            }
+            finally
+            {
+                dialog.Close();
+            }
+        }
+
         _ = dialog.ShowDialog();
         return dialog._result;
     }

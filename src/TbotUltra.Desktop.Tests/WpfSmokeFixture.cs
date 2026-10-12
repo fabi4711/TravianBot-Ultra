@@ -95,6 +95,17 @@ public sealed class WpfSmokeFixture : IDisposable
         }
     }
 
+    /// <summary>Keeps Loaded/ContentRendered coverage without showing or activating test windows.</summary>
+    public static void PrepareOffscreen(Window window)
+    {
+        window.WindowStartupLocation = WindowStartupLocation.Manual;
+        window.Left = SystemParameters.VirtualScreenLeft - 10_000;
+        window.Top = SystemParameters.VirtualScreenTop - 10_000;
+        window.ShowInTaskbar = false;
+        window.ShowActivated = false;
+        window.Opacity = 0;
+    }
+
     public void Dispose()
     {
         _dispatcher?.InvokeShutdown();
