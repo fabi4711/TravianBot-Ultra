@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TbotUltra.Desktop.Services;
 using Xunit;
 
@@ -5,6 +6,89 @@ namespace TbotUltra.Desktop.Tests;
 
 public sealed class AccountProxyPlanTests
 {
+    [Fact]
+    public void ExistingProxyPlan_DefaultsToProxyRoute()
+    {
+        var plan = JsonSerializer.Deserialize<AccountProxyPlan>("""
+            {"Enabled":true,"Assignments":[{"ProxyId":"first","TimeBlocks":[]}]}
+            """);
+
+        Assert.Equal(ProxyRouteKind.Proxy, Assert.Single(plan!.Assignments).Kind);
+    }
+
+    [Fact]
+    public void OwnIp_IsAnExplicitScheduledRouteAndCountsAsRotation()
+    {
+        var proxy = Proxy("first", "1.1.1.1");
+        var plan = AccountProxyPlanNormalizer.Normalize(Plan(
+            Assignment(proxy.Id, Block(0, 12)),
+            new AccountProxyAssignment { Kind = ProxyRouteKind.OwnIp, TimeBlocks = [Block(12, 0)] }));
+
+        var validation = AccountProxyPlanValidator.Validate(
+            plan, [proxy], "alice", neverUseOwnIp: false, sessionPacingEnabled: true,
+            allowedHours: Enumerable.Range(0, 24).ToArray(), sleepMinMinutes: 20, requireHealth: true);
+        var resolution = AccountProxyPlanResolver.Resolve(
+            plan, "alice", new DateTimeOffset(2026, 7, 13, 14, 0, 0, TimeSpan.Zero));
+
+        Assert.True(plan.IsRotation);
+        Assert.True(validation.IsValid);
+        Assert.Equal(ProxyRouteKind.OwnIp, resolution.Kind);
+        Assert.Equal(string.Empty, resolution.ProxyId);
+        Assert.Equal(proxy.Id, resolution.NextProxyId);
+    }
+
+    [Fact]
+    public void OwnIp_IsRejectedWhenNeverUseOwnIpIsEnabled()
+    {
+        var proxy = Proxy("first", "1.1.1.1");
+        var plan = Plan(
+            Assignment(proxy.Id, Block(0, 12)),
+            new AccountProxyAssignment { Kind = ProxyRouteKind.OwnIp, TimeBlocks = [Block(12, 0)] });
+
+        var result = AccountProxyPlanValidator.Validate(
+            plan, [proxy], "alice", neverUseOwnIp: true, sessionPacingEnabled: true,
+            allowedHours: Enumerable.Range(0, 24).ToArray(), sleepMinMinutes: 20, requireHealth: false);
+
+        Assert.Contains(result.Errors, issue => issue.Code == "own_ip_forbidden");
+    }
+
+    [Fact]
+    public void OwnIp_SurvivesSerializationAndRemainsDistinctFromAnUncoveredGap()
+    {
+        var plan = Plan(
+            Assignment("first", Block(0, 8)),
+            new AccountProxyAssignment { Kind = ProxyRouteKind.OwnIp, TimeBlocks = [Block(12, 16)] });
+        var restored = JsonSerializer.Deserialize<AccountProxyPlan>(JsonSerializer.Serialize(plan))!;
+        var ownIp = AccountProxyPlanResolver.Resolve(restored, "alice", new DateTimeOffset(2026, 7, 13, 14, 0, 0, TimeSpan.Zero));
+        var gap = AccountProxyPlanResolver.Resolve(restored, "alice", new DateTimeOffset(2026, 7, 13, 10, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(ProxyRouteKind.OwnIp, Assert.Single(restored.Assignments, item => item.Kind == ProxyRouteKind.OwnIp).Kind);
+        Assert.Equal(ProxyRouteKind.OwnIp, ownIp.Kind);
+        Assert.Null(gap.Kind);
+        Assert.Equal(ProxyRouteKind.OwnIp, gap.NextKind);
+    }
+
+    [Fact]
+    public void RecoveryOverride_UsesProxyUntilTheScheduledOwnIpRoute()
+    {
+        var plan = Plan(
+            Assignment("first", Block(0, 12)),
+            new AccountProxyAssignment { Kind = ProxyRouteKind.OwnIp, TimeBlocks = [Block(12, 0)] });
+        var now = new DateTimeOffset(2026, 7, 13, 14, 0, 0, TimeSpan.Zero);
+        var runtime = new AccountProxyRuntimeState
+        {
+            RecoveryOverrideProxyId = "first",
+            RecoveryOverrideUntilUtc = now.AddHours(1),
+        };
+
+        var duringRecovery = AccountProxyPlanResolver.Resolve(plan, "alice", now, runtime);
+        var afterRecovery = AccountProxyPlanResolver.Resolve(plan, "alice", now.AddHours(1), runtime);
+
+        Assert.Equal(ProxyRouteKind.Proxy, duringRecovery.Kind);
+        Assert.Equal(ProxyRouteKind.OwnIp, duringRecovery.NextKind);
+        Assert.Equal(ProxyRouteKind.OwnIp, afterRecovery.Kind);
+    }
+
     [Fact]
     public void Validate_BlocksAllowedHourGapWhenOwnIpIsForbidden()
     {

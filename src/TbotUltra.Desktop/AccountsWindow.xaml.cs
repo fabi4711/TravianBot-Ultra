@@ -308,9 +308,9 @@ public partial class AccountsWindow : Window
             _editorProxyPlan.Enabled = rotationEnabled;
             if (rotationEnabled)
             {
-                if (_editorProxyPlan.Assignments.Select(item => item.ProxyId).Distinct(StringComparer.OrdinalIgnoreCase).Count() < 2)
+                if (!_editorProxyPlan.IsRotation)
                 {
-                    throw new InvalidOperationException("Proxy rotation requires at least two different proxies. Open Schedule and add another proxy.");
+                    throw new InvalidOperationException("Rotation requires at least two different connections. Open Schedule and add a proxy or Own IP.");
                 }
 
                 var validation = ValidateEditorProxyPlan(entry, requireHealth: _editorProxyPlan.IsRotation);
@@ -330,12 +330,16 @@ public partial class AccountsWindow : Window
                     : new AccountProxyRuntimeState();
                 var resolution = AccountProxyPlanResolver.Resolve(_editorProxyPlan, entry.Name, DateTimeOffset.Now, runtime);
                 var current = _proxyLibraryEntries.FirstOrDefault(proxy => string.Equals(proxy.Id, resolution.ProxyId, StringComparison.OrdinalIgnoreCase));
-                if (current is null && !string.IsNullOrWhiteSpace(resolution.ProxyId))
+                if (current is null && resolution.Kind == ProxyRouteKind.Proxy)
                 {
                     throw new InvalidOperationException("The current scheduled proxy no longer exists in the proxy list.");
                 }
 
                 entry.ProxyEnabled = current is not null;
+                if (current is null)
+                {
+                    entry.ProxyId = string.Empty;
+                }
                 if (current is not null)
                 {
                     entry.ProxyId = current.Id;
@@ -367,7 +371,7 @@ public partial class AccountsWindow : Window
             }
             if (rotationEnabled)
             {
-                foreach (var assignment in _editorProxyPlan.Assignments)
+                foreach (var assignment in _editorProxyPlan.Assignments.Where(item => item.Kind == ProxyRouteKind.Proxy))
                 {
                     _proxyLibraryStore.AddUsage(assignment.ProxyId, entry.Name);
                 }
@@ -608,7 +612,7 @@ public partial class AccountsWindow : Window
         _editorProxyPlan.Enabled = enabled;
         UpdateProxyPlanSummary(ResolveCurrentEditorAccountName());
         InfoTextBlock.Text = enabled
-            ? "Proxy rotation enabled. Configure at least two proxies in Schedule."
+            ? "Rotation enabled. Configure at least two connections in Schedule."
             : "Proxy rotation disabled. The saved schedule is kept for later.";
         UpdateActionButtons();
     }
@@ -902,19 +906,23 @@ public partial class AccountsWindow : Window
         if (UseProxyRotationCheckBox?.IsChecked != true)
         {
             ProxyPlanSummaryTextBlock.Text = _editorProxyPlan.Assignments.Count > 1
-                ? $"Rotation off · {_editorProxyPlan.Assignments.Count} saved proxies"
+                ? $"Rotation off · {_editorProxyPlan.Assignments.Count} saved connections"
                 : "Single proxy mode";
             ProxyPlanNextTextBlock.Text = string.Empty;
             return;
         }
 
-        ProxyPlanSummaryTextBlock.Text = $"{_editorProxyPlan.Assignments.Count} proxies ({_editorProxyPlan.VariationPercent}% variation)";
+        ProxyPlanSummaryTextBlock.Text = $"{_editorProxyPlan.Assignments.Count} connections ({_editorProxyPlan.VariationPercent}% variation)";
         var runtime = string.IsNullOrWhiteSpace(accountName) ? new AccountProxyRuntimeState() : _proxyPlanStore.LoadRuntime(accountName);
         var resolution = AccountProxyPlanResolver.Resolve(_editorProxyPlan, accountName, DateTimeOffset.Now, runtime);
         var current = _proxyLibraryEntries.FirstOrDefault(proxy => string.Equals(proxy.Id, resolution.ProxyId, StringComparison.OrdinalIgnoreCase));
         var next = _proxyLibraryEntries.FirstOrDefault(proxy => string.Equals(proxy.Id, resolution.NextProxyId, StringComparison.OrdinalIgnoreCase));
-        var currentName = string.IsNullOrWhiteSpace(resolution.ProxyId) ? "Direct connection" : current?.DisplayName ?? "Unknown";
-        var nextName = string.IsNullOrWhiteSpace(resolution.NextProxyId) ? "Direct connection" : next?.DisplayName ?? "Unknown";
+        var currentName = resolution.Kind == ProxyRouteKind.OwnIp
+            ? "Own IP"
+            : string.IsNullOrWhiteSpace(resolution.ProxyId) ? "Direct connection" : current?.DisplayName ?? "Unknown";
+        var nextName = resolution.NextKind == ProxyRouteKind.OwnIp
+            ? "Own IP"
+            : string.IsNullOrWhiteSpace(resolution.NextProxyId) ? "Direct connection" : next?.DisplayName ?? "Unknown";
         ProxyPlanNextTextBlock.Text = resolution.NextTransitionAt is { } transition
             ? $"Current: {currentName}{Environment.NewLine}Next: {nextName} at {transition:ddd HH:mm}"
             : $"Current: {currentName}";
@@ -1256,13 +1264,18 @@ public partial class AccountsWindow : Window
             ProxyPortTextBox.Text,
             _editorProxyUsername,
             _editorProxyPassword);
+        var scheduledOwnIp = UseProxyRotationCheckBox.IsChecked == true
+            && AccountProxyPlanResolver.Resolve(
+                _editorProxyPlan,
+                ResolveCurrentEditorAccountName(),
+                DateTimeOffset.Now).Kind == ProxyRouteKind.OwnIp;
         return AccountEditorState.BuildAccountEntry(new AccountEditorInput(
             UsernameTextBox.Text,
             password,
             ManualLoginCheckBox.IsChecked == true,
             serverName,
             serverUrl,
-            UseProxyCheckBox.IsChecked == true,
+            UseProxyCheckBox.IsChecked == true && !scheduledOwnIp,
             NeverUseOwnIpCheckBox.IsChecked == true,
             proxyScheme,
             ProxyHostTextBox.Text,

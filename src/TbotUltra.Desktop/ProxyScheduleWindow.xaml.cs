@@ -108,7 +108,7 @@ public partial class ProxyScheduleWindow : Window
             TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
 
             TimelineGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            AddHeader("Proxy", 0);
+            AddHeader("Connection", 0);
             AddHeader("Days", 1);
             for (var hour = 0; hour < 24; hour++)
             {
@@ -193,9 +193,11 @@ public partial class ProxyScheduleWindow : Window
 
         var proxyCombo = new ComboBox
         {
-            ItemsSource = _library,
-            DisplayMemberPath = nameof(ProxyLibraryEntry.DisplayName),
-            SelectedValuePath = nameof(ProxyLibraryEntry.Id),
+            ItemsSource = new[] { new ProxyRouteOption(ProxyTimelineRow.OwnIpOptionId, "Own IP") }
+                .Concat(_library.Select(proxy => new ProxyRouteOption(proxy.Id, proxy.DisplayName)))
+                .ToList(),
+            DisplayMemberPath = nameof(ProxyRouteOption.DisplayName),
+            SelectedValuePath = nameof(ProxyRouteOption.Id),
             SelectedValue = row.ProxyId,
             Tag = row,
             Margin = new Thickness(2, 4, 6, 4),
@@ -247,7 +249,9 @@ public partial class ProxyScheduleWindow : Window
         TimelineGrid.Children.Add(toggleAllButton);
 
         var proxy = FindProxy(row.ProxyId);
-        var status = proxy?.StatusText ?? "Missing";
+        var status = row.ProxyId == ProxyTimelineRow.OwnIpOptionId
+            ? _neverUseOwnIp ? "Blocked" : "Direct"
+            : proxy?.StatusText ?? "Missing";
         var statusText = new TextBlock
         {
             Text = status,
@@ -257,7 +261,7 @@ public partial class ProxyScheduleWindow : Window
             Foreground = status switch
             {
                 "Working" => FindResource("SuccessBrush") as Brush,
-                "Failed" or "Missing" => FindResource("DangerTextBrush") as Brush,
+                "Failed" or "Missing" or "Blocked" => FindResource("DangerTextBrush") as Brush,
                 _ => FindResource("SlateTextBrush") as Brush,
             },
             ToolTip = proxy?.LatencyMs is > 0 ? $"{proxy.LatencyMs} ms" : null,
@@ -331,6 +335,29 @@ public partial class ProxyScheduleWindow : Window
         MarkChanged("Proxy added. Check the hours it should use, then validate the setup.");
     }
 
+    private void AddOwnIpButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_neverUseOwnIp)
+        {
+            System.Diagnostics.Debug.WriteLine("[proxy-plan] Own IP row rejected: Never use own IP is enabled.");
+            ValidationTextBlock.Text = "Turn off Never use own IP in the account settings before scheduling Own IP.";
+            return;
+        }
+
+        if (_rows.Any(row => row.ProxyId == ProxyTimelineRow.OwnIpOptionId))
+        {
+            System.Diagnostics.Debug.WriteLine("[proxy-plan] Own IP row already exists.");
+            ValidationTextBlock.Text = "Own IP already has a schedule row.";
+            return;
+        }
+
+        var row = new ProxyTimelineRow(ProxyTimelineRow.OwnIpOptionId, AllDays);
+        _rows.Add(row);
+        System.Diagnostics.Debug.WriteLine("[proxy-plan] Own IP row added to schedule editor.");
+        BuildTimeline();
+        MarkChanged("Own IP added. Check the hours it should use, then validate the setup.");
+    }
+
     private void RemoveProxyButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: ProxyTimelineRow row })
@@ -350,14 +377,14 @@ public partial class ProxyScheduleWindow : Window
 
         if (_rows.Any(other => !ReferenceEquals(other, row) && string.Equals(other.ProxyId, proxyId, StringComparison.OrdinalIgnoreCase)))
         {
-            MarkChanged("That proxy already has a schedule row. Choose another proxy.");
+            MarkChanged("That connection already has a schedule row. Choose another connection.");
             BuildTimeline();
             return;
         }
 
         row.ProxyId = proxyId;
         BuildTimeline();
-        MarkChanged("Proxy changed. Validate again before saving.");
+        MarkChanged("Connection changed. Validate again before saving.");
     }
 
     private void DaysComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -517,7 +544,7 @@ public partial class ProxyScheduleWindow : Window
         _validationCts?.Dispose();
         _validationCts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         ValidationOverlay.ShowCancel = true;
-        ValidationOverlay.Show("Validating proxy setup", $"Preparing to test {_rows.Count} proxies…");
+        ValidationOverlay.Show("Validating proxy setup", $"Preparing to test {_rows.Count} connections…");
         try
         {
             var selected = _rows.Select(row => FindProxy(row.ProxyId)).Where(proxy => proxy is not null).Cast<ProxyLibraryEntry>().ToList();
@@ -531,6 +558,17 @@ public partial class ProxyScheduleWindow : Window
                 proxy.IsWorking = probe.Success;
                 proxy.LatencyMs = probe.LatencyMs > 0 ? probe.LatencyMs : proxy.LatencyMs;
                 proxy.LastFailureUtc = probe.Success ? null : probe.LatencyMs <= 0 ? DateTime.UtcNow : proxy.LastFailureUtc;
+            }
+
+            if (_rows.Any(row => row.ProxyId == ProxyTimelineRow.OwnIpOptionId) && !_neverUseOwnIp)
+            {
+                ValidationOverlay.Text = "Testing Own IP connection to Travian…";
+                if (!await tester.TestDirectAgainstTargetAsync(_serverUrl, _validationCts.Token))
+                {
+                    _lastValidationResult = null;
+                    ValidationTextBlock.Text = "Own IP could not reach Travian. Check the connection or save without a network test.";
+                    return false;
+                }
             }
 
             _libraryStore.Save(_library);
@@ -582,7 +620,7 @@ public partial class ProxyScheduleWindow : Window
 
         if (_rows.Select(row => row.ProxyId).Distinct(StringComparer.OrdinalIgnoreCase).Count() < 2)
         {
-            throw new InvalidOperationException("Proxy rotation requires at least two different proxies.");
+            throw new InvalidOperationException("Rotation requires at least two different connections (proxies or Own IP).");
         }
 
         return AccountProxyPlanNormalizer.Normalize(new AccountProxyPlan
@@ -591,7 +629,8 @@ public partial class ProxyScheduleWindow : Window
             VariationPercent = variation,
             Assignments = _rows.Select(row => new AccountProxyAssignment
             {
-                ProxyId = row.ProxyId,
+                Kind = row.ProxyId == ProxyTimelineRow.OwnIpOptionId ? ProxyRouteKind.OwnIp : ProxyRouteKind.Proxy,
+                ProxyId = row.ProxyId == ProxyTimelineRow.OwnIpOptionId ? string.Empty : row.ProxyId,
                 TimeBlocks = row.BuildTimeBlocks(),
             }).ToList(),
         });
@@ -602,7 +641,7 @@ public partial class ProxyScheduleWindow : Window
         ValidationTextBlock.Inlines.Clear();
         if (result.Issues.Count == 0 && showHealthyResult)
         {
-            ValidationTextBlock.Inlines.Add(new Run("Setup is valid. All selected proxies passed the stability and Travian tests.")
+            ValidationTextBlock.Inlines.Add(new Run("Setup is valid. All selected connections passed their Travian tests.")
             {
                 Foreground = FindResource("SuccessTextBrush") as Brush,
             });
@@ -629,10 +668,12 @@ public partial class ProxyScheduleWindow : Window
         => _library.FirstOrDefault(proxy => string.Equals(proxy.Id, proxyId, StringComparison.OrdinalIgnoreCase));
 
     private sealed record ProxyHourTag(ProxyTimelineRow Row, int Hour);
+    private sealed record ProxyRouteOption(string Id, string DisplayName);
 }
 
 public sealed class ProxyTimelineRow
 {
+    public const string OwnIpOptionId = "__own_ip__";
     public string ProxyId { get; set; }
     public string DayGroup { get; set; }
     public bool[] Hours { get; } = new bool[24];
@@ -653,7 +694,9 @@ public sealed class ProxyTimelineRow
             : allDays.SetEquals(weekends)
                 ? "Weekends"
                 : "All days";
-        var row = new ProxyTimelineRow(assignment.ProxyId, group);
+        var row = new ProxyTimelineRow(
+            assignment.Kind == ProxyRouteKind.OwnIp ? OwnIpOptionId : assignment.ProxyId,
+            group);
         var relevantDays = DaysFor(group);
         for (var hour = 0; hour < 24; hour++)
         {

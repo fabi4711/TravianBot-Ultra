@@ -61,6 +61,7 @@ public partial class MainWindow
                 var runtime = ProxyPlanStore.LoadRuntime(account.Name);
                 var scheduled = AccountProxyPlanResolver.Resolve(plan, account.Name, DateTimeOffset.Now, runtime);
                 plannedProxyIds = plan.Assignments
+                    .Where(item => item.Kind == ProxyRouteKind.Proxy)
                     .Select(item => item.ProxyId)
                     .OrderByDescending(id => string.Equals(id, scheduled.ProxyId, StringComparison.OrdinalIgnoreCase))
                     .ToList();
