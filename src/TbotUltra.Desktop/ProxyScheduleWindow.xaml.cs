@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using TbotUltra.Desktop.Services;
 using TbotUltra.Worker.Infrastructure;
@@ -97,15 +98,15 @@ public partial class ProxyScheduleWindow : Window
             TimelineGrid.Children.Clear();
             TimelineGrid.ColumnDefinitions.Clear();
             TimelineGrid.RowDefinitions.Clear();
-            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
-            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
+            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(84) });
             for (var hour = 0; hour < 24; hour++)
             {
-                TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(24) });
+                TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(22) });
             }
-            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(66) });
+            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(62) });
             TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
-            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
+            TimelineGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
 
             TimelineGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             AddHeader("Connection", 0);
@@ -201,7 +202,7 @@ public partial class ProxyScheduleWindow : Window
             SelectedValue = row.ProxyId,
             Tag = row,
             Margin = new Thickness(2, 4, 6, 4),
-            MinWidth = 165,
+            MinWidth = 155,
         };
         proxyCombo.SelectionChanged += ProxyComboBox_SelectionChanged;
         Grid.SetRow(proxyCombo, gridRow);
@@ -270,17 +271,36 @@ public partial class ProxyScheduleWindow : Window
         Grid.SetColumn(statusText, 27);
         TimelineGrid.Children.Add(statusText);
 
-        var removeButton = new Button
+        var deleteButton = new Button
         {
-            Content = "Remove",
+            Content = new Path
+            {
+                Data = Geometry.Parse("M 5,7 L 19,7 M 9,4 L 15,4 M 7,7 L 8,20 L 16,20 L 17,7 M 11,10 L 11,17 M 14,10 L 14,17"),
+                Width = 16,
+                Height = 16,
+                Stretch = Stretch.Uniform,
+                Stroke = FindResource("DangerTextBrush") as Brush,
+                StrokeThickness = 1.8,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                StrokeLineJoin = PenLineJoin.Round,
+            },
             Tag = row,
             Margin = new Thickness(4),
-            Padding = new Thickness(5, 2, 5, 2),
+            Padding = new Thickness(0),
+            Width = 32,
+            Height = 24,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Background = FindResource("DangerBgBrush") as Brush,
+            BorderBrush = FindResource("DangerBorderBrush") as Brush,
+            Foreground = FindResource("DangerTextBrush") as Brush,
+            ToolTip = "Delete connection row",
         };
-        removeButton.Click += RemoveProxyButton_Click;
-        Grid.SetRow(removeButton, gridRow);
-        Grid.SetColumn(removeButton, 28);
-        TimelineGrid.Children.Add(removeButton);
+        System.Windows.Automation.AutomationProperties.SetName(deleteButton, "Delete connection row");
+        deleteButton.Click += DeleteConnectionButton_Click;
+        Grid.SetRow(deleteButton, gridRow);
+        Grid.SetColumn(deleteButton, 28);
+        TimelineGrid.Children.Add(deleteButton);
     }
 
     private static CheckBox CreateHourCheckBox(bool isChecked) => new()
@@ -313,15 +333,14 @@ public partial class ProxyScheduleWindow : Window
     private void AddProxyButton_Click(object sender, RoutedEventArgs e)
     {
         var unused = _library.FirstOrDefault(proxy => _rows.All(row => !string.Equals(row.ProxyId, proxy.Id, StringComparison.OrdinalIgnoreCase)));
-        if (unused is null)
+        var canAddOwnIp = !_neverUseOwnIp && _rows.All(row => row.ProxyId != ProxyTimelineRow.OwnIpOptionId);
+        if (unused is null && !canAddOwnIp)
         {
-            ValidationTextBlock.Text = _library.Count == 0
-                ? "Add proxies to the proxy list first."
-                : "All saved proxies are already in the schedule.";
+            ValidationTextBlock.Text = "All available connections are already in the schedule.";
             return;
         }
 
-        var row = new ProxyTimelineRow(unused.Id, AllDays);
+        var row = new ProxyTimelineRow(unused?.Id ?? ProxyTimelineRow.OwnIpOptionId, AllDays);
         if (_rows.Count == 0)
         {
             foreach (var hour in _allowedHours)
@@ -331,40 +350,19 @@ public partial class ProxyScheduleWindow : Window
         }
 
         _rows.Add(row);
+        System.Diagnostics.Debug.WriteLine($"[proxy-plan] schedule row added: {(unused is null ? "Own IP" : "proxy")}.");
         BuildTimeline();
-        MarkChanged("Proxy added. Check the hours it should use, then validate the setup.");
+        MarkChanged("Connection added. Choose a proxy or Own IP and check its hours, then validate the setup.");
     }
 
-    private void AddOwnIpButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_neverUseOwnIp)
-        {
-            System.Diagnostics.Debug.WriteLine("[proxy-plan] Own IP row rejected: Never use own IP is enabled.");
-            ValidationTextBlock.Text = "Turn off Never use own IP in the account settings before scheduling Own IP.";
-            return;
-        }
-
-        if (_rows.Any(row => row.ProxyId == ProxyTimelineRow.OwnIpOptionId))
-        {
-            System.Diagnostics.Debug.WriteLine("[proxy-plan] Own IP row already exists.");
-            ValidationTextBlock.Text = "Own IP already has a schedule row.";
-            return;
-        }
-
-        var row = new ProxyTimelineRow(ProxyTimelineRow.OwnIpOptionId, AllDays);
-        _rows.Add(row);
-        System.Diagnostics.Debug.WriteLine("[proxy-plan] Own IP row added to schedule editor.");
-        BuildTimeline();
-        MarkChanged("Own IP added. Check the hours it should use, then validate the setup.");
-    }
-
-    private void RemoveProxyButton_Click(object sender, RoutedEventArgs e)
+    private void DeleteConnectionButton_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: ProxyTimelineRow row })
         {
             _rows.Remove(row);
+            System.Diagnostics.Debug.WriteLine("[proxy-plan] schedule row deleted.");
             BuildTimeline();
-            MarkChanged("Proxy removed. Validate again before saving.");
+            MarkChanged("Connection deleted. Validate again before saving.");
         }
     }
 
