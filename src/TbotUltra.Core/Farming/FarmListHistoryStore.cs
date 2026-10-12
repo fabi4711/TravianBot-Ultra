@@ -12,7 +12,8 @@ public sealed record FarmListHistoryEntry(
     string? VillageName,
     string Origin,
     string Response,
-    TimeSpan? SincePrevious)
+    TimeSpan? SincePrevious,
+    string? BatchId = null)
 {
     [JsonIgnore]
     public string SentAtLocalText => SentAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
@@ -60,6 +61,7 @@ public static class FarmListHistoryStore
         {
             var now = DateTimeOffset.UtcNow;
             var entries = LoadCore(projectRoot, accountName, serverUrl, now, log).ToList();
+            var batchId = Guid.NewGuid().ToString("N");
             foreach (var entry in newEntries.OrderBy(item => item.SentAtUtc))
             {
                 var key = FarmListDispatchStateStore.CreateKey(entry.ListId, entry.ListName);
@@ -68,6 +70,7 @@ public static class FarmListHistoryStore
                 entries.Add(entry with
                 {
                     SincePrevious = previous is null ? null : entry.SentAtUtc - previous.SentAtUtc,
+                    BatchId = batchId,
                 });
             }
 

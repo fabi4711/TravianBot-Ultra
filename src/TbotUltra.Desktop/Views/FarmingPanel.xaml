@@ -695,6 +695,11 @@
                               EnableRowVirtualization="True" VirtualizingPanel.IsVirtualizing="True"
                               VirtualizingPanel.VirtualizationMode="Recycling" ScrollViewer.CanContentScroll="True"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Setter Property="ToolTip" Value="{Binding Details}" />
+                            </Style>
+                        </DataGrid.RowStyle>
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Village" Binding="{Binding VillageName}" Width="1.5*" MinWidth="140" />
                             <DataGridTextColumn Header="List" Binding="{Binding ListName}" Width="2.8*" MinWidth="260" />

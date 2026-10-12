@@ -49,6 +49,25 @@ public sealed class FarmListHistoryStoreTests
     }
 
     [Fact]
+    public void Append_AssignsOneBatchToListsConfirmedSecondsApart()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "tbot-farmlist-history-tests", Guid.NewGuid().ToString("N"));
+        var first = DateTimeOffset.UtcNow.AddMinutes(-1);
+        const string server = "https://a.travian.com";
+
+        FarmListHistoryStore.Append(root, "alice", server,
+            [new(first, "A", "1", "Village", "Automatic", "success", null),
+             new(first.AddSeconds(8), "B", "2", "Village", "Automatic", "success", null)]);
+        FarmListHistoryStore.Append(root, "alice", server,
+            [new(first.AddSeconds(15), "C", "3", "Village", "Automatic", "success", null)]);
+
+        var history = FarmListHistoryStore.Load(root, "alice", server);
+        Assert.NotNull(history[0].BatchId);
+        Assert.Equal(history[0].BatchId, history[1].BatchId);
+        Assert.NotEqual(history[1].BatchId, history[2].BatchId);
+    }
+
+    [Fact]
     public void Append_DropsEntriesOlderThanThirtyDays()
     {
         var root = Path.Combine(Path.GetTempPath(), "tbot-farmlist-history-tests", Guid.NewGuid().ToString("N"));
