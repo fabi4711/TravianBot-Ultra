@@ -78,6 +78,20 @@ public sealed class HumanSlotNavigationSourceTests
     }
 
     [Fact]
+    public void Dorf2Overview_LeavesAutoReloadingDorf1WithVerifiedReadOnlyNavigation()
+    {
+        var navigation = ReadSource("Core", "TravianClient.Navigation.cs");
+        var overview = Slice(navigation, "private async Task OpenVillageOverviewAsync", "private async Task OpenSlotTabAsync");
+
+        Assert.Contains("TryReadActiveVillageCoordsFromCurrentPageAsync(cancellationToken)", overview, StringComparison.Ordinal);
+        Assert.Contains("await GotoAsync(Paths.Buildings, cancellationToken)", overview, StringComparison.Ordinal);
+        Assert.Contains("VillageIdentityReconciler.SameCoordinates", overview, StringComparison.Ordinal);
+        Assert.Contains("CurrentPageHasUsableTravianShellAsync(cancellationToken)", overview, StringComparison.Ordinal);
+        Assert.True(overview.IndexOf("await GotoAsync(Paths.Buildings, cancellationToken)", StringComparison.Ordinal)
+            < overview.IndexOf("visible overview link was unavailable", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void SlotEntry_RecoversNavigationThatFinishesAfterClickTimeout()
     {
         var navigation = ReadSource("Core", "TravianClient.Navigation.cs");
@@ -98,7 +112,7 @@ public sealed class HumanSlotNavigationSourceTests
         Assert.Contains("catch (TimeoutException)", slotEntry, StringComparison.Ordinal);
         Assert.Contains("CurrentPageHasUsableTravianShellAsync(cancellationToken)", slotEntry, StringComparison.Ordinal);
         Assert.Contains("FindExactSlotClickPointAsync", click, StringComparison.Ordinal);
-        Assert.Contains("await _page.Mouse.ClickAsync((float)clickPoint[0], (float)clickPoint[1])", click, StringComparison.Ordinal);
+        Assert.Contains("await BrowserClickActions.ClickViewportPointAsync(", click, StringComparison.Ordinal);
         Assert.Contains("WaitForExactSlotAfterClickTimeoutAsync(slotId, cancellationToken)", click, StringComparison.Ordinal);
     }
 

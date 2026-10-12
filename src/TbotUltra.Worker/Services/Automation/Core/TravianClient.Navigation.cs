@@ -653,11 +653,9 @@ public sealed partial class TravianClient
 
                     await EnsureAccountAccessAllowedAsync(cancellationToken);
                     Notify($"[slot-nav] clicking verified wall point for slot {slotId} candidate {i + 1}/{count}.");
-                    using (var trace = _browserTrace.BeginOperation("CLICK", $"open wall slot {slotId} from overview", "verified viewport point"))
-                    {
-                        await _page.Mouse.ClickAsync((float)clickPoint[0], (float)clickPoint[1]).WaitAsync(cancellationToken);
-                        trace.Complete("success");
-                    }
+                    await BrowserClickActions.ClickViewportPointAsync(
+                        _page, _browserTrace, (float)clickPoint[0], (float)clickPoint[1],
+                        $"open wall slot {slotId} from overview", cancellationToken);
                     if (!await WaitForExactSlotAfterClickTimeoutAsync(slotId, cancellationToken))
                     {
                         throw new TransientNavigationException(
@@ -781,6 +779,31 @@ public sealed partial class TravianClient
         var overviewLink = resourceFields
             ? "a.village.resourceView[href*='dorf1.php']"
             : "a.village.buildingView[href*='dorf2.php']";
+        (int? X, int? Y) villageBeforeNavigation = (null, null);
+        if (!resourceFields)
+        {
+            for (var readAttempt = 1; readAttempt <= 3; readAttempt++)
+            {
+                try
+                {
+                    villageBeforeNavigation = await TryReadActiveVillageCoordsFromCurrentPageAsync(cancellationToken);
+                    if (VillageIdentityReconciler.HasCoordinates(villageBeforeNavigation))
+                    {
+                        break;
+                    }
+                }
+                catch (PlaywrightException ex) when (IsTransientExecutionContextError(ex))
+                {
+                    Notify($"[slot-nav] Dorf2 village identity read interrupted by page reload ({readAttempt}/3): {ex.Message}");
+                }
+
+                if (readAttempt < 3)
+                {
+                    await Task.Delay(100, cancellationToken);
+                }
+            }
+        }
+
         for (var attempt = 1; attempt <= 2; attempt++)
         {
             if (IsCurrentUrlForPath(overviewPath) && !await IsPageMarkedStaleAsync())
@@ -835,6 +858,78 @@ public sealed partial class TravianClient
                 await WaitForPageReadyAsync(cancellationToken);
                 await Task.Delay(300, cancellationToken);
                 continue;
+            }
+
+            if (!resourceFields && VillageIdentityReconciler.HasCoordinates(villageBeforeNavigation))
+            {
+                // A movement-triggered Dorf1 auto-reload may replace the link every second. Leave
+                // Dorf1 via a read-only navigation instead of waiting for a stable click target.
+                for (var navigationAttempt = 1; navigationAttempt <= 2; navigationAttempt++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var onBuildings = IsCurrentUrlForPath(Paths.Buildings);
+                    var usableBuildings = false;
+                    if (onBuildings)
+                    {
+                        try
+                        {
+                            usableBuildings = await CurrentPageHasUsableTravianShellAsync(cancellationToken);
+                        }
+                        catch (PlaywrightException ex) when (IsTransientExecutionContextError(ex))
+                        {
+                            Notify($"[slot-nav] Dorf2 shell check interrupted by navigation: {ex.Message}");
+                        }
+                    }
+
+                    if (!usableBuildings)
+                    {
+                        if (!onBuildings && !IsCurrentUrlForPath(Paths.Resources))
+                        {
+                            throw new TransientNavigationException(
+                                $"Cannot recover Dorf2 navigation: browser left Dorf1 for '{_page.Url}'.");
+                        }
+
+                        Notify($"[slot-nav] Dorf2 link did not survive Dorf1 reload; opening verified read-only URL ({navigationAttempt}/2).");
+                        try
+                        {
+                            await GotoAsync(Paths.Buildings, cancellationToken);
+                        }
+                        catch (Exception ex) when (ex is PlaywrightException or TimeoutException
+                            || ex is InvalidOperationException { InnerException: PlaywrightException or TimeoutException })
+                        {
+                            Notify($"[slot-nav] Dorf2 read-only navigation attempt {navigationAttempt}/2 was interrupted: {ex.Message}");
+                        }
+                    }
+
+                    if (IsCurrentUrlForPath(Paths.Buildings))
+                    {
+                        try
+                        {
+                            if (!await CurrentPageHasUsableTravianShellAsync(cancellationToken))
+                            {
+                                continue;
+                            }
+
+                            var villageAfterNavigation = await TryReadActiveVillageCoordsFromCurrentPageAsync(cancellationToken);
+                            if (VillageIdentityReconciler.SameCoordinates(villageBeforeNavigation, villageAfterNavigation))
+                            {
+                                Notify("[slot-nav] opened Dorf2 via verified read-only URL after overview link reload.");
+                                InvalidateActiveConstructionsCache();
+                                return;
+                            }
+
+                            throw new TransientNavigationException(
+                                "Cannot recover Dorf2 navigation: active village changed during read-only fallback.");
+                        }
+                        catch (PlaywrightException ex) when (IsTransientExecutionContextError(ex) && navigationAttempt < 2)
+                        {
+                            Notify($"[slot-nav] Dorf2 identity verification interrupted by reload; retrying: {ex.Message}");
+                        }
+                    }
+                }
+
+                throw new TransientNavigationException(
+                    $"Cannot open Dorf2: read-only navigation did not reach a verified overview for the same village after two attempts. Current page: '{_page.Url}'.");
             }
 
             throw new InvalidOperationException(

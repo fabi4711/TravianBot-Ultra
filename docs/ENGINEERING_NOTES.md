@@ -31,6 +31,10 @@ The local SDK also requires disabled build servers and a serial solution build; 
 or the repository verification scripts rather than a plain parallel `dotnet build`.
 Automated tests must run without visible windows whenever possible. WPF smoke tests that need `Loaded`,
 `ContentRendered`, or dialogs must use off-screen, non-activating windows rather than flashing UI on the desktop.
+The development VBS launcher gates changed app/test/launcher sources on a Release solution build and both CI test
+projects before opening the UI. Failed checks block new launches and show a dialog with the failing test and
+local preflight log path; an already-running app is left untouched. A passing source stamp avoids repeating
+unchanged checks on every launch.
 
 Published artifacts belong under `artifacts/`, never beside source files.
 
@@ -65,7 +69,10 @@ Published artifacts belong under `artifacts/`, never beside source files.
   links and the slot's live click target. If the exact slot remains visible but no click target is
   actionable, a direct `build.php` URL is an alarmed compatibility fallback; never use it when the slot
   itself is absent. A Travian `reload=auto` can temporarily hide overview links and slots: wait for a
-  settled overview with a bounded retry before declaring absence. After a failed slot click, confirm the
+  settled overview with a bounded retry before declaring absence. If repeated Dorf1 reloads prevent the
+  visible Dorf2 link from opening, a bounded read-only Dorf2 navigation may recover only after the active
+  village coordinates were captured, and must verify the same coordinates and a usable shell afterward.
+  After a failed slot click, confirm the
   browser is still on that overview before trying another layer; never click through to a different slot.
   If Playwright times out after dispatching a slot click, wait briefly for the exact target URL and defer
   if its outcome stays uncertain; do not click another layer. A concave wall SVG needs a hit-tested point

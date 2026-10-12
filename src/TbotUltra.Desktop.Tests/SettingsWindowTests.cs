@@ -258,7 +258,7 @@ public sealed class SettingsWindowTests : IDisposable
                 Assert.True(window.SettingsVm.Pacing.ParkOnDorf2WhileIdle);
                 Assert.Equal("Park on Dorf2 during automation", checkBox.Content);
                 Assert.Equal(
-                    "When enabled, active automation checks the current page before tasks or waits and after each action. If it is Dorf1, the bot moves to Dorf2. Saving this setting wakes a running automation for an immediate check at its next safe boundary. Other pages are left unchanged; paused or stopped automation does not move. Incoming attack monitoring and Troop Evasion may temporarily visit Dorf1.",
+                    "During active automation, stay on Dorf1 when there are no incoming or outgoing troop movements, or when the next task starts at least 20 seconds before the next movement. Move to Dorf2 when a movement may refresh Dorf1 before that safe margin. Other pages are left unchanged; paused or stopped automation does not move.",
                     infoIcon.ToolTip);
             }
             finally

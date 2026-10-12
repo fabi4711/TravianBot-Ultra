@@ -7,9 +7,14 @@ projectPath = projectDir & "\src\TbotUltra.Desktop\TbotUltra.Desktop.csproj"
 devOutputDir = projectDir & "\temp_build_out\dev-app"
 exePath = devOutputDir & "\TbotUltra.Desktop.exe"
 sourceStampPath = devOutputDir & "\.source-stamp"
+checkStampPath = devOutputDir & "\.ci-check-stamp"
+checkLogPath = devOutputDir & "\preflight.log"
+checkScriptPath = projectDir & "\scripts\Verify-DevLaunch.ps1"
 srcDesktop = projectDir & "\src\TbotUltra.Desktop"
 srcWorker = projectDir & "\src\TbotUltra.Worker"
 srcCore = projectDir & "\src\TbotUltra.Core"
+srcDesktopTests = projectDir & "\src\TbotUltra.Desktop.Tests"
+srcWorkerTests = projectDir & "\src\TbotUltra.Worker.Tests"
 needsBuild = False
 
 If Len(dotnetExe) = 0 Then
@@ -19,22 +24,50 @@ ElseIf Not fso.FileExists(projectPath) Then
 Else
     shell.CurrentDirectory = projectDir
 
-    If IsAppRunning(shell) Then
-        If Not shell.AppActivate("Tbot Ultra") Then
-            MsgBox "Tbot Ultra is already running. Leaving it open; close it before rebuilding the dev app output.", vbInformation, "Tbot Ultra"
-        End If
-        WScript.Quit 0
-    End If
-
     latestSource = #1/1/2000#
     UpdateLatestModified srcDesktop, latestSource
     UpdateLatestModified srcWorker, latestSource
     UpdateLatestModified srcCore, latestSource
+    latestCheckSource = latestSource
+    UpdateLatestModified srcDesktopTests, latestCheckSource
+    UpdateLatestModified srcWorkerTests, latestCheckSource
+    If fso.GetFile(WScript.ScriptFullName).DateLastModified > latestCheckSource Then
+        latestCheckSource = fso.GetFile(WScript.ScriptFullName).DateLastModified
+    End If
+    If fso.FileExists(checkScriptPath) Then
+        If fso.GetFile(checkScriptPath).DateLastModified > latestCheckSource Then
+            latestCheckSource = fso.GetFile(checkScriptPath).DateLastModified
+        End If
+    End If
 
     If Not fso.FileExists(exePath) Then
         needsBuild = True
     ElseIf latestSource > ReadBuildStamp(fso, sourceStampPath) Then
         needsBuild = True
+    End If
+
+    If Not fso.FileExists(checkScriptPath) Then
+        MsgBox "Preflight script is missing: " & checkScriptPath & ". The app was not started.", vbCritical, "Tbot Ultra - Preflight failed"
+        WScript.Quit 1
+    End If
+
+    If latestCheckSource > ReadBuildStamp(fso, checkStampPath) Then
+        checkCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & checkLogPath & """"
+        checkExitCode = shell.Run(checkCommand, 0, True)
+        If checkExitCode <> 0 Then
+            MsgBox "Local CI check failed. The app was not started." & vbCrLf & _
+                ReadPreflightFailure(fso, checkLogPath) & vbCrLf & vbCrLf & _
+                "Full log: " & checkLogPath, vbCritical, "Tbot Ultra - Preflight failed"
+            WScript.Quit checkExitCode
+        End If
+        WriteBuildStamp fso, checkStampPath, latestCheckSource
+    End If
+
+    If IsAppRunning(shell) Then
+        If Not shell.AppActivate("Tbot Ultra") Then
+            MsgBox "Tbot Ultra is already running. Leaving it open; close it before rebuilding the dev app output.", vbInformation, "Tbot Ultra"
+        End If
+        WScript.Quit 0
     End If
 
     If needsBuild Then
@@ -59,6 +92,25 @@ Function IsAppRunning(shellObject)
     IsAppRunning = (exitCode = 0)
 End Function
 
+Function ReadPreflightFailure(fileSystemObject, logPath)
+    ReadPreflightFailure = "Check the preflight log for the failed step."
+    If Not fileSystemObject.FileExists(logPath) Then
+        Exit Function
+    End If
+
+    Set stream = fileSystemObject.OpenTextFile(logPath, 1)
+    Do Until stream.AtEndOfStream
+        line = Trim(stream.ReadLine)
+        If InStr(1, line, "[FAIL]", vbTextCompare) > 0 Or _
+           InStr(1, line, "ERROR:", vbTextCompare) = 1 Or _
+           InStr(1, line, "error CS", vbTextCompare) > 0 Then
+            ReadPreflightFailure = Left(line, 300)
+            Exit Do
+        End If
+    Loop
+    stream.Close
+End Function
+
 Sub UpdateLatestModified(folderPath, ByRef latest)
     On Error Resume Next
     If Not fso.FolderExists(folderPath) Then
@@ -71,11 +123,12 @@ Sub UpdateLatestModified(folderPath, ByRef latest)
         Exit Sub
     End If
 
-    ' A source file edit updates its direct parent directory. Walking directories instead of
-    ' every source file makes unchanged launches much faster while still rebuilding on edits.
-    If folder.DateLastModified > latest Then
-        latest = folder.DateLastModified
-    End If
+    ' Directory timestamps do not reliably change when an existing file is edited.
+    For Each sourceFile In folder.Files
+        If sourceFile.DateLastModified > latest Then
+            latest = sourceFile.DateLastModified
+        End If
+    Next
 
     For Each subFolder In folder.SubFolders
         UpdateLatestModified subFolder.Path, latest
