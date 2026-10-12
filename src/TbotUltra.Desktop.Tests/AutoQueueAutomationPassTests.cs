@@ -121,11 +121,12 @@ public sealed class AutoQueueAutomationPassTests
             new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7),
             CancellationToken.None);
 
-        Assert.Equal(2, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(deferred.NextAttemptAt, preparation.LastParkingNextTaskAtUtc);
     }
 
     [Fact]
-    public async Task CompletedAction_ParksOnDorf2WhenEnabled()
+    public async Task CompletedAction_DoesNotParkBeforeNextSelection()
     {
         var preparation = new InMemoryAutoQueueAutomationPassPort
         {
@@ -141,11 +142,11 @@ public sealed class AutoQueueAutomationPassTests
 
         await pass.CompleteAsync(context, action, AutomationActionOutcome.Completed, CancellationToken.None);
 
-        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
     }
 
     [Fact]
-    public async Task ReadyAction_ChecksDorf1BeforeSelectionWhenParkingIsEnabled()
+    public async Task ReadyAction_DoesNotParkBeforeSelection()
     {
         var item = new QueueItem
         {
@@ -165,7 +166,7 @@ public sealed class AutoQueueAutomationPassTests
             CancellationToken.None);
 
         Assert.Single(snapshot.Candidates);
-        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
     }
 
     [Fact]
@@ -251,9 +252,11 @@ public sealed class AutoQueueAutomationPassTests
             RequestedSmartSleepDeadline = trustedDeadlineUtc;
             return false;
         }
-        public ValueTask MaybeParkOnDorf2Async(BotOptions options, CancellationToken cancellationToken)
+        public DateTimeOffset? LastParkingNextTaskAtUtc { get; private set; }
+        public ValueTask MaybeParkOnDorf2Async(BotOptions options, DateTimeOffset? nextTaskAtUtc, CancellationToken cancellationToken)
         {
             IdleDorf2ParkingCount++;
+            LastParkingNextTaskAtUtc = nextTaskAtUtc;
             return ValueTask.CompletedTask;
         }
         public void MarkActivePass() { }

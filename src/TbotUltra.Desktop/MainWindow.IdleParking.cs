@@ -6,6 +6,7 @@ public partial class MainWindow
 {
     private async Task MaybeParkOnDorf2Async(
         BotOptions options,
+        DateTimeOffset? nextTaskAtUtc,
         CancellationToken cancellationToken)
     {
         try
@@ -13,6 +14,7 @@ public partial class MainWindow
             if (await _botService.TryParkOnDorf2IfOnDorf1Async(
                     options,
                     AppendLog,
+                    nextTaskAtUtc,
                     cancellationToken))
             {
                 AppendLog("[dorf2-park] moved the current village from Dorf1 to Dorf2 during automation.");

@@ -70,8 +70,9 @@ public partial class MainWindow
 
         public ValueTask MaybeParkOnDorf2Async(
             BotOptions options,
+            DateTimeOffset? nextTaskAtUtc,
             CancellationToken cancellationToken) =>
-            new(owner.MaybeParkOnDorf2Async(options, cancellationToken));
+            new(owner.MaybeParkOnDorf2Async(options, nextTaskAtUtc, cancellationToken));
 
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 

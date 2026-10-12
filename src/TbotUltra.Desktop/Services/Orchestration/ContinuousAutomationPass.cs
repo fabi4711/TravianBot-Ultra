@@ -27,7 +27,7 @@ internal interface IContinuousAutomationPassPort
     ValueTask MaybeCheckInboxAsync(CancellationToken cancellationToken);
     void LogSmartSleepBlockedByReadyTask(QueueItem item);
     ValueTask MaybeKeepBrowserFreshAsync(BotOptions options, CancellationToken cancellationToken);
-    ValueTask MaybeParkOnDorf2Async(BotOptions options, CancellationToken cancellationToken);
+    ValueTask MaybeParkOnDorf2Async(BotOptions options, DateTimeOffset? nextTaskAtUtc, CancellationToken cancellationToken);
     bool TryRequestSmartSleep(DateTimeOffset? trustedDeadlineUtc);
     void Log(string message);
     string FormatException(Exception exception);
@@ -97,11 +97,6 @@ internal sealed class ContinuousAutomationPass : IAutomationModePassPort
                     NextWakeAt: _port.VillageMembershipVerificationNotBeforeUtc > now
                         ? _port.VillageMembershipVerificationNotBeforeUtc
                         : now.AddSeconds(30));
-            }
-
-            if (options.ParkOnDorf2WhileIdle)
-            {
-                await _port.MaybeParkOnDorf2Async(options, cancellationToken);
             }
 
             var immediateWorkRequested = _runtime.ConsumeImmediateWorkRequest();
@@ -216,7 +211,10 @@ internal sealed class ContinuousAutomationPass : IAutomationModePassPort
                 networkBackoff: false);
             if (!smartSleepRequested && options.ParkOnDorf2WhileIdle)
             {
-                await _port.MaybeParkOnDorf2Async(options, cancellationToken);
+                await _port.MaybeParkOnDorf2Async(
+                    options,
+                    waitDelay is { } nextTaskDelay ? nowForDeadline.Add(nextTaskDelay) : null,
+                    cancellationToken);
             }
             if (_runtime.ShouldPublishIdleHeartbeat(IdleHeartbeatInterval))
             {
@@ -272,18 +270,12 @@ internal sealed class ContinuousAutomationPass : IAutomationModePassPort
         AutomationCandidate action,
         CancellationToken cancellationToken) => _port.ExecuteAsync(action, cancellationToken);
 
-    public async ValueTask CompleteAsync(
+    public ValueTask CompleteAsync(
         AutomationRunContext context,
         AutomationCandidate action,
         AutomationActionOutcome outcome,
         CancellationToken cancellationToken)
-    {
-        var options = AutomationExecutionOptions.WithoutImplicitVillageTarget(_port.LoadOptions());
-        if (options.ParkOnDorf2WhileIdle)
-        {
-            await _port.MaybeParkOnDorf2Async(options, cancellationToken);
-        }
-    }
+        => ValueTask.CompletedTask;
 
     private void LogSelection(long passId, QueueItem item)
     {

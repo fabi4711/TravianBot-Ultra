@@ -145,6 +145,7 @@ public sealed partial class TravianClient
     }
 
     public async Task<bool> ParkOnBuildingsPageIfOnResourcesAsync(
+        DateTimeOffset? nextTaskAtUtc,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -153,6 +154,15 @@ public sealed partial class TravianClient
             return false;
         }
 
+        var countdown = IncomingAttackDomParser.ParseDorf1MovementCountdown(await _page.ContentAsync());
+        var nowUtc = DateTimeOffset.UtcNow;
+        if (!IncomingAttackDomParser.ShouldParkOnDorf2(countdown, nextTaskAtUtc, nowUtc))
+        {
+            Notify($"[dorf2-park] staying on Dorf1; next movement={countdown.NextSeconds?.ToString() ?? "none"}s, next task={nextTaskAtUtc?.ToString("O") ?? "unknown"}.");
+            return false;
+        }
+
+        Notify($"[dorf2-park] moving to Dorf2; next movement={countdown.NextSeconds?.ToString() ?? "unreadable"}s, next task={nextTaskAtUtc?.ToString("O") ?? "unknown"}.");
         await OpenVillageOverviewAsync(resourceFields: false, cancellationToken);
         return true;
     }

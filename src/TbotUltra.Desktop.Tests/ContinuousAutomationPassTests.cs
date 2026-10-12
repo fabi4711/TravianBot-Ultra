@@ -113,7 +113,8 @@ public sealed class ContinuousAutomationPassTests
         await pass.ReadAsync(context, CancellationToken.None);
         await pass.ReadAsync(context, CancellationToken.None);
 
-        Assert.Equal(4, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(2, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(Now.AddMinutes(5), preparation.LastParkingNextTaskAtUtc);
     }
 
     [Fact]
@@ -131,12 +132,12 @@ public sealed class ContinuousAutomationPassTests
             new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7),
             CancellationToken.None);
 
-        Assert.Equal(2, preparation.IdleDorf2ParkingCount);
-        Assert.True(preparation.Trace.IndexOf("park") < preparation.Trace.IndexOf("idle-break"));
+        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+        Assert.True(preparation.Trace.IndexOf("park") > preparation.Trace.IndexOf("idle-break"));
     }
 
     [Fact]
-    public async Task ReadyAction_ChecksDorf1BeforeSelectionWhenParkingIsEnabled()
+    public async Task ReadyAction_DoesNotParkBeforeSelection()
     {
         var item = new QueueItem
         {
@@ -155,12 +156,11 @@ public sealed class ContinuousAutomationPassTests
             new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7),
             CancellationToken.None);
 
-        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
-        Assert.True(preparation.Trace.IndexOf("park") < preparation.Trace.IndexOf("select"));
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
     }
 
     [Fact]
-    public async Task CompletedAction_ParksOnDorf2WhenEnabled()
+    public async Task CompletedAction_DoesNotParkBeforeNextSelection()
     {
         var preparation = new InMemoryContinuousAutomationPassPort
         {
@@ -176,11 +176,11 @@ public sealed class ContinuousAutomationPassTests
 
         await pass.CompleteAsync(context, action, AutomationActionOutcome.Completed, CancellationToken.None);
 
-        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
     }
 
     [Fact]
-    public async Task EnablingParkingDuringAction_IsAppliedAtCompletion()
+    public async Task EnablingParkingDuringAction_IsAppliedAtNextIdleBoundary()
     {
         var item = new QueueItem
         {
@@ -206,6 +206,8 @@ public sealed class ContinuousAutomationPassTests
             AutomationActionOutcome.Completed,
             CancellationToken.None);
 
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
+        await pass.ReadAsync(context, CancellationToken.None);
         Assert.Equal(1, preparation.IdleDorf2ParkingCount);
     }
 
@@ -499,9 +501,11 @@ public sealed class ContinuousAutomationPassTests
         }
         public void LogSmartSleepBlockedByReadyTask(QueueItem item) => SmartSleepBlockers.Add(item.Id);
         public ValueTask MaybeKeepBrowserFreshAsync(BotOptions options, CancellationToken cancellationToken) => ValueTask.CompletedTask;
-        public ValueTask MaybeParkOnDorf2Async(BotOptions options, CancellationToken cancellationToken)
+        public DateTimeOffset? LastParkingNextTaskAtUtc { get; private set; }
+        public ValueTask MaybeParkOnDorf2Async(BotOptions options, DateTimeOffset? nextTaskAtUtc, CancellationToken cancellationToken)
         {
             IdleDorf2ParkingCount++;
+            LastParkingNextTaskAtUtc = nextTaskAtUtc;
             Trace.Add("park");
             return ValueTask.CompletedTask;
         }

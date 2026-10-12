@@ -18,6 +18,8 @@ internal enum IncomingAttackFilterAction
 
 internal static class IncomingAttackDomParser
 {
+    internal sealed record Dorf1MovementCountdown(bool HasMovements, int? NextSeconds);
+
     private static readonly Regex VillageRowRegex = new(
         @"<div\b(?<attrs>[^>]*\bclass\s*=\s*[\""'](?=[^\""']*\blistEntry\b)(?=[^\""']*\bvillage\b)(?=[^\""']*\battack\b)[^\""']*[\""'][^>]*)>(?<body>.*?)(?=<div\b[^>]*\bclass\s*=\s*[\""'][^\""']*\blistEntry\b|</div>\s*</div>\s*</div>)",
         RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
@@ -33,6 +35,53 @@ internal static class IncomingAttackDomParser
     private static readonly Regex Dorf1UnitsTableRegex = new(
         @"<div\b[^>]*\bclass\s*=\s*[\""'][^\""']*\bvillageInfobox\b[^\""']*\bunits\b[^\""']*[\""'][^>]*>[\s\S]*?<table\b[^>]*\bid\s*=\s*[\""']troops[\""'][^>]*>(?<body>.*?)</table>",
         RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+    internal static Dorf1MovementCountdown ParseDorf1MovementCountdown(string? html)
+    {
+        var table = Dorf1MovementTableRegex.Match(html ?? string.Empty);
+        if (!table.Success)
+            return new Dorf1MovementCountdown(false, null);
+
+        var nextSeconds = int.MaxValue;
+        var hasMovements = false;
+        foreach (Match row in Regex.Matches(table.Groups["body"].Value, @"<tr\b[^>]*>(?<body>.*?)</tr>",
+                     RegexOptions.IgnoreCase | RegexOptions.Singleline))
+        {
+            var body = row.Groups["body"].Value;
+            if (!Regex.IsMatch(body, @"<td\b[^>]*\bclass\s*=\s*[\""'][^\""']*\btyp\b", RegexOptions.IgnoreCase))
+                continue;
+
+            hasMovements = true;
+            var timer = Regex.Match(body,
+                @"<span\b[^>]*\bclass\s*=\s*[\""'][^\""']*\btimer\b[^\""']*[\""'][^>]*>(?<time>[^<]*)</span>",
+                RegexOptions.IgnoreCase);
+            var timerText = WebUtility.HtmlDecode(timer.Groups["time"].Value).Trim();
+            var remaining = TimeSpan.TryParse(timerText, CultureInfo.InvariantCulture, out var liveTime)
+                && liveTime >= TimeSpan.Zero
+                ? (int?)Math.Ceiling(liveTime.TotalSeconds)
+                : ParseRemainingSeconds(body);
+            if (remaining is null)
+                return new Dorf1MovementCountdown(true, null);
+            nextSeconds = Math.Min(nextSeconds, remaining.Value);
+        }
+
+        return hasMovements
+            ? new Dorf1MovementCountdown(true, nextSeconds)
+            : new Dorf1MovementCountdown(false, null);
+    }
+
+    internal static bool ShouldParkOnDorf2(
+        Dorf1MovementCountdown countdown,
+        DateTimeOffset? nextTaskAtUtc,
+        DateTimeOffset nowUtc)
+    {
+        if (!countdown.HasMovements)
+            return false;
+        if (countdown.NextSeconds is null || nextTaskAtUtc is null)
+            return true;
+
+        return countdown.NextSeconds.Value < (nextTaskAtUtc.Value - nowUtc).TotalSeconds + 20;
+    }
 
     internal static bool? ParseDorf1HasTroopsAtHome(string? html)
     {

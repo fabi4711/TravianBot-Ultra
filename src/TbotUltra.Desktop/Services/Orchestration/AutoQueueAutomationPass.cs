@@ -8,7 +8,7 @@ internal interface IAutoQueueAutomationPassPort
     BotOptions LoadOptionsWithSelectedVillage();
     ValueTask HonorPendingVillageSwitchAsync(BotOptions options, CancellationToken cancellationToken);
     bool TryRequestSmartSleep(DateTimeOffset? trustedDeadlineUtc);
-    ValueTask MaybeParkOnDorf2Async(BotOptions options, CancellationToken cancellationToken);
+    ValueTask MaybeParkOnDorf2Async(BotOptions options, DateTimeOffset? nextTaskAtUtc, CancellationToken cancellationToken);
     void Log(string message);
     ValueTask<AutomationActionOutcome> ExecuteAsync(
         AutomationCandidate action,
@@ -48,10 +48,6 @@ internal sealed class AutoQueueAutomationPass : IAutomationModePassPort
     {
         var options = _port.LoadOptionsWithSelectedVillage();
         await _port.HonorPendingVillageSwitchAsync(options, cancellationToken);
-        if (options.ParkOnDorf2WhileIdle)
-        {
-            await _port.MaybeParkOnDorf2Async(options, cancellationToken);
-        }
         if (_runtime.HasPendingLoginRound)
         {
             var priority = _runtime.SelectReadyPriorityQueueItem(options);
@@ -103,7 +99,7 @@ internal sealed class AutoQueueAutomationPass : IAutomationModePassPort
             smartSleepDelay is { } delay ? now.Add(delay) : null);
         if (!smartSleepRequested && options.ParkOnDorf2WhileIdle)
         {
-            await _port.MaybeParkOnDorf2Async(options, cancellationToken);
+            await _port.MaybeParkOnDorf2Async(options, nextDeferredItem.NextAttemptAt, cancellationToken);
         }
         return new AutomationStateSnapshot([AutomationCandidate.FromQueueItem(nextDeferredItem)]);
     }
@@ -113,16 +109,10 @@ internal sealed class AutoQueueAutomationPass : IAutomationModePassPort
         AutomationCandidate action,
         CancellationToken cancellationToken) => _port.ExecuteAsync(action, cancellationToken);
 
-    public async ValueTask CompleteAsync(
+    public ValueTask CompleteAsync(
         AutomationRunContext context,
         AutomationCandidate action,
         AutomationActionOutcome outcome,
         CancellationToken cancellationToken)
-    {
-        var options = _port.LoadOptionsWithSelectedVillage();
-        if (options.ParkOnDorf2WhileIdle)
-        {
-            await _port.MaybeParkOnDorf2Async(options, cancellationToken);
-        }
-    }
+        => ValueTask.CompletedTask;
 }

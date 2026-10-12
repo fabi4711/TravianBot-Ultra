@@ -486,11 +486,13 @@ public Task ExecuteLoginAsync(BotOptions options, Action<string> log, bool keepB
     public Task<bool> TryParkOnDorf2IfOnDorf1Async(
         BotOptions options,
         Action<string> log,
+        DateTimeOffset? nextTaskAtUtc,
         CancellationToken cancellationToken)
     {
         return _taskRunner.TryParkOnDorf2IfOnDorf1Async(
             options,
             log,
+            nextTaskAtUtc,
             accountName: null,
             cancellationToken: cancellationToken);
     }
