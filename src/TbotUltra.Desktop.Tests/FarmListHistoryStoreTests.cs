@@ -6,6 +6,21 @@ namespace TbotUltra.Desktop.Tests;
 
 public sealed class FarmListHistoryStoreTests
 {
+    [Theory]
+    [InlineData(null, "—")]
+    [InlineData(0, "00:00:00")]
+    [InlineData(3661, "01:01:01")]
+    [InlineData(90061, "25:01:01")]
+    [InlineData(-90061, "-25:01:01")]
+    public void SincePreviousText_UsesTotalHours(int? seconds, string expected)
+    {
+        var entry = new FarmListHistoryEntry(
+            DateTimeOffset.UtcNow, "Raiders", "42", "Village", "Manual", "success",
+            seconds is { } value ? TimeSpan.FromSeconds(value) : null);
+
+        Assert.Equal(expected, entry.SincePreviousText);
+    }
+
     [Fact]
     public void AppendAndClear_AreScopedToAccountAndServerAndTrackPreviousSend()
     {

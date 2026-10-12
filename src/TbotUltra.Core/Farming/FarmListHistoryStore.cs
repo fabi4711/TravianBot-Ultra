@@ -17,9 +17,20 @@ public sealed record FarmListHistoryEntry(
     [JsonIgnore]
     public string SentAtLocalText => SentAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
     [JsonIgnore]
-    public string SincePreviousText => SincePrevious is { } elapsed
-        ? elapsed.ToString(@"d\.hh\:mm\:ss")
-        : "—";
+    public string SincePreviousText
+    {
+        get
+        {
+            if (SincePrevious is not { } elapsed)
+            {
+                return "—";
+            }
+
+            var duration = elapsed.Duration();
+            var totalHours = duration.Days * 24L + duration.Hours;
+            return $"{(elapsed < TimeSpan.Zero ? "-" : "")}{totalHours:00}:{duration.Minutes:00}:{duration.Seconds:00}";
+        }
+    }
 }
 
 public static class FarmListHistoryStore
