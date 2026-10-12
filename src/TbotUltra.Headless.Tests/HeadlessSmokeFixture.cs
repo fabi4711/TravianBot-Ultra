@@ -39,6 +39,11 @@ public sealed class WpfSmokeFixture : IDisposable
         failure?.Throw();
     }
 
+    // Headless windows are never shown, so there is nothing to move off screen.
+    public static void PrepareOffscreen(Window window)
+    {
+    }
+
     public void Dispose()
     {
     }

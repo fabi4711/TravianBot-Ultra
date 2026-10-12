@@ -66,7 +66,8 @@ public sealed class BuildingsPanelHeadlessTests
                     .SelectMany(list => HeadlessTemplates.RealizeItems(list))
                     .SelectMany(item => HeadlessXaml.Descendants(item).OfType<Button>())
                     .ToList();
-                Assert.Equal(before + 3, buttons.Count);
+                // Each slot has its slot button plus the quick level-up button.
+                Assert.Equal(2 * (before + 3), buttons.Count);
                 var texts = slotLists
                     .SelectMany(list => HeadlessTemplates.RealizeItems(list))
                     .SelectMany(item => HeadlessXaml.Descendants(item).OfType<TextBlock>())

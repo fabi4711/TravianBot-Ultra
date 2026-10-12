@@ -264,6 +264,10 @@ public static class SystemParameters
     public static Rect WorkArea => new(0, 0, 1920, 1040);
     public static double PrimaryScreenWidth => 1920;
     public static double PrimaryScreenHeight => 1080;
+    public static double VirtualScreenLeft => 0;
+    public static double VirtualScreenTop => 0;
+    public static double VirtualScreenWidth => 1920;
+    public static double VirtualScreenHeight => 1080;
     public static double MinimumHorizontalDragDistance => 4;
     public static double MinimumVerticalDragDistance => 4;
 }
