@@ -390,8 +390,32 @@ public sealed partial class TravianClient
 
     private async Task<ResourceTransferMerchantState> ReadMarketplaceMerchantStateAsync(CancellationToken cancellationToken)
     {
-        var state = await _page.EvaluateAsync<ResourceTransferMerchantStateJs>(
-            """
+        // Right after switching to the Send resources tab the merchant box can still be incomplete
+        // (seen: available=0 capacity_per_merchant=1), which skipped a source with 5 free merchants.
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            var state = await _page.EvaluateAsync<ResourceTransferMerchantStateJs>(
+                MerchantStateScript);
+
+            var available = Math.Max(0, state.Available ?? 0);
+            var perMerchant = Math.Max(0, state.CapacityPerMerchant ?? 0);
+            Notify(
+                $"[resource-transfer] Merchant state available={available} capacity_per_merchant={perMerchant} "
+                + $"next_return_seconds={state.NextReturnSeconds?.ToString() ?? "unknown"} attempt={attempt}/{maxAttempts} url='{_page.Url}'.");
+            if (perMerchant >= MinPlausibleMerchantCapacity || attempt >= maxAttempts)
+            {
+                return new ResourceTransferMerchantState(available, perMerchant, available * perMerchant, state.NextReturnSeconds);
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(1.5), cancellationToken);
+        }
+    }
+
+    private const int MinPlausibleMerchantCapacity = 100;
+
+    private const string MerchantStateScript =
+        """
             () => {
               const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim();
               const parseNumber = (value) => {
@@ -443,15 +467,7 @@ public sealed partial class TravianClient
 
               return { available, capacityPerMerchant: capacity, nextReturnSeconds };
             }
-            """);
-
-        var available = Math.Max(0, state.Available ?? 0);
-        var perMerchant = Math.Max(0, state.CapacityPerMerchant ?? 0);
-        Notify(
-            $"[resource-transfer] Merchant state available={available} capacity_per_merchant={perMerchant} "
-            + $"next_return_seconds={state.NextReturnSeconds?.ToString() ?? "unknown"} url='{_page.Url}'.");
-        return new ResourceTransferMerchantState(available, perMerchant, available * perMerchant, state.NextReturnSeconds);
-    }
+            """;
 
     private async Task<bool> TrySendResourceTransferShipmentAsync(Village targetVillage, ResourceTransferShipment shipment, CancellationToken cancellationToken)
     {
