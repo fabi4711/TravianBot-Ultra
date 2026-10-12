@@ -97,6 +97,20 @@ public sealed partial class TravianClient : IBuildingClient
                 return humanizeDefer;
             }
 
+            var gid = ParseGidFromBuildingCode(info.BuildingCode)
+                      ?? BuildingCatalogService.GidForName(buildingName);
+            var affordabilityBlock = await EvaluateBuildingUpgradeAffordabilityAsync(
+                slotId,
+                gid,
+                buildingName,
+                nextLevel,
+                upgrades,
+                cancellationToken);
+            if (affordabilityBlock is not null)
+            {
+                return affordabilityBlock;
+            }
+
             // Step 3: open or reuse the slot's build page.
             await EnsureCurrentBuildPageForActionAsync(slotId, "upgrade", cancellationToken);
             // Wait for the build slot controls to render before reading/clicking. GotoAsync only waits
@@ -118,13 +132,6 @@ public sealed partial class TravianClient : IBuildingClient
             }
 
             // Step 5: verify the live page one final time, then click "Upgrade to level N".
-            var gid = ParseGidFromBuildingCode(info.BuildingCode)
-                      ?? BuildingCatalogService.GidForName(buildingName);
-            if (gid is null)
-            {
-                return $"Slot {slotId}: pre-click safety could not resolve gid for '{buildingName}'. "
-                       + "Re-reading live levels before retry. queue_wait_seconds=1";
-            }
             var durationAnomaly = DetectMainBuildingDurationAnomaly(
                 gid,
                 nextLevel,
@@ -136,7 +143,7 @@ public sealed partial class TravianClient : IBuildingClient
             }
             var clickSafety = await VerifyUpgradePreClickSafetyAsync(
                 slotId,
-                gid.Value,
+                gid!.Value,
                 buildingName,
                 currentLevel,
                 nextLevel,
@@ -432,8 +439,9 @@ public sealed partial class TravianClient : IBuildingClient
                 null,
                 null,
                 null);
-            Notify(UpgradeResourceWaitCalculator.FormatLog(heroLimitSnapshot));
-            return heroLimitSnapshot;
+            var boundedSnapshot = HonorConstructionHeroRevalidationDeadline(heroLimitSnapshot);
+            Notify(UpgradeResourceWaitCalculator.FormatLog(boundedSnapshot));
+            return boundedSnapshot;
         }
 
         _heroTransferOverLimitWaitSeconds = null;
@@ -520,6 +528,7 @@ public sealed partial class TravianClient : IBuildingClient
                 capacities.Warehouse,
                 capacities.Granary,
                 serverStorageBlockKind);
+            snapshot = HonorConstructionHeroRevalidationDeadline(snapshot);
             Notify(UpgradeResourceWaitCalculator.FormatLog(snapshot));
             return snapshot;
         }
@@ -536,8 +545,25 @@ public sealed partial class TravianClient : IBuildingClient
             capacities.Warehouse,
             capacities.Granary,
             serverStorageBlockKind);
+        liveSnapshot = HonorConstructionHeroRevalidationDeadline(liveSnapshot);
         Notify(UpgradeResourceWaitCalculator.FormatLog(liveSnapshot));
         return liveSnapshot;
+    }
+
+    private UpgradeResourceWaitSnapshot HonorConstructionHeroRevalidationDeadline(UpgradeResourceWaitSnapshot snapshot)
+    {
+        if (snapshot.StorageCapacityKind is not null
+            || !_config.HeroResourceTransferEnabled
+            || !_config.HeroResourceUseConstruction
+            || TryGetCachedHeroInventorySnapshot()?.ConstructionProbe?.NextProbeAtUtc is not { } nextProbe)
+        {
+            return snapshot;
+        }
+
+        var probeWaitSeconds = Math.Max(1, (int)Math.Ceiling((nextProbe - DateTimeOffset.UtcNow).TotalSeconds));
+        return probeWaitSeconds < snapshot.WaitSeconds
+            ? snapshot with { WaitSeconds = probeWaitSeconds, WaitReason = "hero_revalidation" }
+            : snapshot;
     }
 
     private async Task<IReadOnlyDictionary<string, double?>> ReadCachedProductionByHourForActiveVillageAsync(CancellationToken cancellationToken)
@@ -655,13 +681,13 @@ public sealed partial class TravianClient : IBuildingClient
         if (IsCurrentUrlForPath(Paths.Buildings) && !await IsPageMarkedStaleAsync())
         {
             Notify($"[build:verbose] slot {slotId}: reading current fresh dorf2 overview without reload.");
-            var currentSlots = await ReadBuildingInfosAsync(cancellationToken);
+            var currentSlots = (await ReadBuildingInfosAsync(cancellationToken)).Buildings;
             return currentSlots.TryGetValue(slotId, out var currentInfo) ? currentInfo : null;
         }
 
         Notify($"[build:verbose] slot {slotId}: current page snapshot unavailable; reading dorf2 overview.");
-        await ReloadOrGotoAsync(Paths.Buildings, cancellationToken);
-        var slots = await ReadBuildingInfosAsync(cancellationToken);
+        await OpenVillageOverviewAsync(resourceFields: false, cancellationToken);
+        var slots = (await ReadBuildingInfosAsync(cancellationToken)).Buildings;
         return slots.TryGetValue(slotId, out var info) ? info : null;
     }
 
@@ -789,10 +815,7 @@ public sealed partial class TravianClient : IBuildingClient
     {
         if (!TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
         {
-            if (!await TryOpenBuildSlotFromOverviewAsync(slotId, cancellationToken))
-            {
-                await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken);
-            }
+            await OpenSlotFromOverviewAsync(slotId, cancellationToken);
         }
         else if (await IsPageMarkedStaleAsync())
         {
@@ -801,52 +824,6 @@ public sealed partial class TravianClient : IBuildingClient
         }
 
         await EnsureExpectedBuildSlotPageAsync(slotId, operationLabel, cancellationToken);
-    }
-
-    private async Task<bool> TryOpenBuildSlotFromOverviewAsync(
-        int slotId,
-        CancellationToken cancellationToken)
-    {
-        if (!Uri.TryCreate(_page.Url, UriKind.Absolute, out var currentUri)
-            || !currentUri.AbsolutePath.EndsWith("/dorf2.php", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        try
-        {
-            var selector = $"a[href$='build.php?id={slotId}'], a[href*='build.php?id={slotId}&'], "
-                + $"area[href$='build.php?id={slotId}'], area[href*='build.php?id={slotId}&']";
-            Notify($"[build:verbose] slot {slotId}: opening via visible dorf2 slot link.");
-            if (!await TryClickFirstVisibleEnabledAsync(
-                    selector,
-                    cancellationToken,
-                    reason: $"open building slot {slotId}"))
-            {
-                Notify($"[build:verbose] slot {slotId}: no visible overview link; using direct fallback.");
-                return false;
-            }
-
-            await WaitForPageReadyAsync(cancellationToken);
-            InvalidateActiveConstructionsCache();
-            await ApplyPacingDelayAsync(
-                _config.ActionPacingPageLoadMinSeconds,
-                _config.ActionPacingPageLoadMaxSeconds,
-                "page-load-pacing",
-                "after building slot click",
-                cancellationToken);
-            await TryDismissContinuePromptAsync(cancellationToken);
-            return TravianUrls.IsBuildPageForSlot(_page.Url, slotId);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            Notify($"[build:verbose] slot {slotId}: overview link failed ({ex.Message}); using direct fallback.");
-            return false;
-        }
     }
 
     private async Task<BuildPageState> DetectBuildPageStateAsync()
@@ -990,7 +967,8 @@ public sealed partial class TravianClient : IBuildingClient
             }
             EnsureExpectedBuildingIdentity(slotId, expectedBuildingName, info);
             var currentLevel = info.Level;
-            var gid = ParseGidFromBuildingCode(info.BuildingCode);
+            var gid = ParseGidFromBuildingCode(info.BuildingCode)
+                      ?? BuildingCatalogService.GidForName(info.BuildingName);
             var maxLevel = gid is int g ? BuildingCatalogService.MaxLevelFor(g) : 20;
             var buildingName = string.IsNullOrWhiteSpace(info.BuildingName) ? $"slot {slotId}" : info.BuildingName;
             if (currentLevel >= maxLevel)
@@ -1023,6 +1001,18 @@ public sealed partial class TravianClient : IBuildingClient
                 return humanizeDefer;
             }
 
+            var affordabilityBlock = await EvaluateBuildingUpgradeAffordabilityAsync(
+                slotId,
+                gid,
+                buildingName,
+                nextLevel,
+                upgrades,
+                cancellationToken);
+            if (affordabilityBlock is not null)
+            {
+                return affordabilityBlock;
+            }
+
             // Step 3: open or reuse the slot's build page.
             await EnsureCurrentBuildPageForActionAsync(slotId, "upgrade-to-max", cancellationToken);
             // Wait for the build slot controls to render before reading/clicking (see UpgradeBuildingToLevelAsync).
@@ -1040,11 +1030,6 @@ public sealed partial class TravianClient : IBuildingClient
             }
 
             // Step 5: verify the live page one final time, then click "Upgrade to level N".
-            if (gid is null)
-            {
-                return $"Slot {slotId}: pre-click safety could not resolve gid for '{buildingName}'. "
-                       + $"Upgrades performed: {upgrades}. queue_wait_seconds=1";
-            }
             var durationAnomaly = DetectMainBuildingDurationAnomaly(
                 gid,
                 nextLevel,
@@ -1056,7 +1041,7 @@ public sealed partial class TravianClient : IBuildingClient
             }
             var clickSafety = await VerifyUpgradePreClickSafetyAsync(
                 slotId,
-                gid.Value,
+                gid!.Value,
                 buildingName,
                 currentLevel,
                 nextLevel,
@@ -1464,7 +1449,7 @@ public sealed partial class TravianClient : IBuildingClient
         {
             if (!IsCurrentUrlForPath(Paths.Buildings))
             {
-                await GotoAsync(Paths.Buildings, cancellationToken);
+                await OpenVillageOverviewAsync(resourceFields: false, cancellationToken);
             }
             return await TryReadSlotLevelOnCurrentPageAsync(slotId);
         }
@@ -1658,10 +1643,7 @@ public sealed partial class TravianClient : IBuildingClient
             // / a post-click redirect) can leave us on dorf2.php?id=slot, which carries the same id= param
             // as build.php?id=slot. Re-open the slot so the upgrade click targets the build page instead of
             // silently running on the village overview. (Official build.php?id=N also adds &gid=.)
-            if (!await TryOpenBuildSlotFromOverviewAsync(slotId, cancellationToken))
-            {
-                await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken);
-            }
+            await OpenSlotFromOverviewAsync(slotId, cancellationToken);
             await EnsureLoggedInAsync(cancellationToken: cancellationToken);
             if (!TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
             {

@@ -27,7 +27,7 @@
             <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
                 <TextBlock Text="Proxy rotation" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                 <ContentControl Style="{DynamicResource InfoTooltipIconStyle}" Margin="7,1,0,0"
-                                ToolTip="Allowed hours from Settings are shown first. Add one row per proxy and check the hours that proxy should use." />
+                                ToolTip="Allowed hours from Settings are shown first. Add one row per connection and check the hours it should use." />
             </StackPanel>
             <Border Grid.Column="1" Margin="16,0,20,0" Padding="9,5"
                     Background="{DynamicResource ControlBackgroundBrush}"
@@ -54,12 +54,12 @@
                 </Grid.RowDefinitions>
                 <DockPanel Margin="0,0,0,8">
                     <Button Content="Add proxy" Width="100" DockPanel.Dock="Left"
-                            Background="{DynamicResource SuccessBrush}"
-                            BorderBrush="{DynamicResource SuccessBrush}"
-                            Foreground="White"
+                            Background="{DynamicResource SuccessBgBrush}"
+                            BorderBrush="{DynamicResource SuccessBorderBrush}"
+                            Foreground="{DynamicResource SuccessTextBrush}"
                             FontWeight="SemiBold"
                             Click="AddProxyButton_Click" />
-                    <TextBlock Text="Checked hours are active. Each hour may belong to only one proxy for the same day group."
+                    <TextBlock Text="Checked hours are active. Choose a proxy or Own IP for each time block."
                                Margin="12,4,0,0" Foreground="{DynamicResource SlateTextBrush}" />
                 </DockPanel>
                 <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
@@ -80,9 +80,9 @@
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Proxy list" Width="100" Margin="0,0,8,0" Click="ProxyListButton_Click" />
                 <Button x:Name="SaveButton" Content="Save" Width="100"
-                        Background="{DynamicResource SuccessBrush}"
-                        BorderBrush="{DynamicResource SuccessBrush}"
-                        Foreground="White"
+                        Background="{DynamicResource SuccessBgBrush}"
+                        BorderBrush="{DynamicResource SuccessBorderBrush}"
+                        Foreground="{DynamicResource SuccessTextBrush}"
                         FontWeight="SemiBold"
                         Click="SaveButton_Click" />
                 <Button Content="Cancel" Width="90" Margin="8,0,0,0" Click="CancelButton_Click" />

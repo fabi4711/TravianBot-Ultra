@@ -28,7 +28,7 @@ public sealed partial class TravianClient : IHeroClient
         var isOnTheWay = (quick.Status.SecondsUntilReturn is > 0) || HeroStatusDecision.IsAwayStatusText(statusText);
         var adventures = ResolveAdventureCount(quick);
 
-        Notify($"[hero] status — '{statusText ?? "(unknown)"}', inHomeVillage={inHomeVillage}, dead={isDead}, onTheWay={isOnTheWay}, hp={quick.Status.HpPercent?.ToString() ?? "?"}%, adventures={adventures}");
+        Notify($"[hero] status — '{statusText ?? "(unknown)"}', presence={quick.Presence}, dead={isDead}, onTheWay={isOnTheWay}, hp={quick.Status.HpPercent?.ToString() ?? "?"}%, adventures={adventures}");
 
         if (isDead)
         {
@@ -79,6 +79,23 @@ public sealed partial class TravianClient : IHeroClient
                 Dispatched: false,
                 SecondsUntilReturn: null,
                 Message: "No adventures available. Nothing to dispatch.");
+        }
+
+        var livePresence = await ReadHeroPresenceAsync(cancellationToken);
+        if (livePresence != HeroPresence.Home)
+        {
+            Notify(livePresence == HeroPresence.Away
+                ? "[hero] live pre-dispatch check shows the hero is away; Adventures was not opened."
+                : "[hero] live pre-dispatch check could not prove the hero is home; Adventures was not opened.");
+            return new HeroAdventureDispatchResult(
+                IsInHomeVillage: false,
+                StatusText: statusText,
+                AdventureCount: adventures,
+                Dispatched: false,
+                SecondsUntilReturn: null,
+                Message: livePresence == HeroPresence.Away
+                    ? "Hero left the home village before dispatch. Skipping Adventure navigation."
+                    : "Hero presence is unknown. Skipping Adventure navigation until the live home icon is available.");
         }
 
         // Before dispatching, optionally raise the next adventure's danger to hard via the bonus video.
@@ -387,6 +404,7 @@ public sealed partial class TravianClient : IHeroClient
         // the current page has no trustworthy hero signals (login/interstitial/incomplete page).
         var quick = await ReadHeroQuickStatusAsync(allowDorf1Fallback: true, forceDorf1Reload: false, cancellationToken);
         var status = quick.Status;
+        var presence = quick.Presence;
         var inVillage = quick.IsInVillage;
         var hpPercent = status.HpPercent ?? quick.HeroHpFromSidebar;
         var adventureHintCount = ResolveAdventureCount(quick);
@@ -404,6 +422,7 @@ public sealed partial class TravianClient : IHeroClient
 
             quick = await ReadHeroQuickStatusAsync(allowDorf1Fallback: true, forceDorf1Reload: false, cancellationToken);
             status = quick.Status;
+            presence = quick.Presence;
             inVillage = quick.IsInVillage;
             hpPercent = status.HpPercent ?? quick.HeroHpFromSidebar;
             adventureHintCount = ResolveAdventureCount(quick);
@@ -438,7 +457,7 @@ public sealed partial class TravianClient : IHeroClient
         // The global hero icon reliably tells us that the hero is away, but normal village/building
         // pages do not always expose its countdown. Hero Attributes has one unambiguous hero-state
         // timer; Rally Point can contain thousands of unrelated troop returns across several pages.
-        if (!inVillage && !status.IsDead && heroReturnWaitSeconds is not > 0)
+        if (presence == HeroPresence.Away && !status.IsDead && heroReturnWaitSeconds is not > 0)
         {
             var isReinforcing = string.Equals(status.MovementState, "Reinforcing", StringComparison.OrdinalIgnoreCase);
             if (HeroStatusDecision.ShouldReadReturnEtaFromAttributes(
@@ -496,6 +515,7 @@ public sealed partial class TravianClient : IHeroClient
                 actions.Add($"ointments_used={ointmentResult.UsedCount}");
                 quick = await ReadHeroQuickStatusAsync(allowDorf1Fallback: true, forceDorf1Reload: false, cancellationToken);
                 status = quick.Status;
+                presence = quick.Presence;
                 inVillage = quick.IsInVillage;
                 hpPercent = status.HpPercent ?? quick.HeroHpFromSidebar;
                 var refreshedAdventureCount = ResolveAdventureCount(quick);
@@ -562,48 +582,71 @@ public sealed partial class TravianClient : IHeroClient
         }
         else if (adventureCount > 0 && canSendByHp && inVillage)
         {
-            // Check the exact Official missing-Rally-Point state before consuming either optional
-            // adventure video. The later dispatch reuses this already-open adventures page.
-            await EnsureHeroAdventureDispatchPageAsync(cancellationToken);
-
-            // Optionally raise the next adventure's danger to hard (bonus video) before dispatching.
-            // Self-skips if already active and never throws, so dispatch proceeds regardless.
-            if (_config.IncreaseAdventuresToHard)
+            // Hero state may change while points, ointments, or HP are handled. Re-read the active
+            // top-bar icon immediately before the first Adventure navigation. Away and Unknown are
+            // both fail-safe outcomes; only an explicit Home observation may dispatch.
+            presence = await ReadHeroPresenceAsync(cancellationToken);
+            inVillage = presence == HeroPresence.Home;
+            if (!inVillage)
             {
-                var hardResult = await IncreaseAdventuresToHardForSelectedAdventureAsync(adventurePickOrder, cancellationToken);
-                Notify($"[hero] increase-adventures-to-hard: {hardResult}");
-                actions.Add(hardResult.Contains("already hard", StringComparison.OrdinalIgnoreCase)
-                    ? "increase_danger_to_hard_skipped_already_hard"
-                    : "increase_danger_to_hard");
-            }
-
-            if (_config.ReduceAdventureTime)
-            {
-                var reduceResult = await ReduceAdventuresTimeAsync(cancellationToken);
-                Notify($"[hero] reduce-adventure-time: {reduceResult}");
-                actions.Add("reduce_adventure_time");
-            }
-
-            var (sent, durationSeconds, returnSeconds) = await TrySendHeroToAdventureAsync(adventurePickOrder, cancellationToken);
-            heroReturnWaitSeconds = returnSeconds > 0 ? returnSeconds : durationSeconds > 0 ? durationSeconds * 2 : null;
-            if (sent)
-            {
-                actions.Add($"adventure_sent({adventurePickOrder},duration={durationSeconds}s,return_eta={heroReturnWaitSeconds ?? 0}s)");
+                actions.Add(presence == HeroPresence.Away
+                    ? "adventure_skipped_hero_away"
+                    : "adventure_skipped_hero_status_unknown");
+                heroReturnWaitSeconds ??= HeroAdventureBlockedRetrySeconds;
+                Notify(presence == HeroPresence.Away
+                    ? "[hero] live pre-dispatch check shows the hero is away; Adventures was not opened."
+                    : "[hero] live pre-dispatch check could not prove the hero is home; Adventures was not opened.");
             }
             else
             {
-                actions.Add("adventure_not_clickable");
-                // Button disabled even though the hero looks home/alive (e.g. just-revived cooldown).
-                // Defer instead of completing, so the loop does not instantly re-queue (and re-watch the
-                // danger video) in a tight loop that never resolves.
-                heroReturnWaitSeconds ??= HeroAdventureBlockedRetrySeconds;
+                // Check the exact Official missing-Rally-Point state before consuming either optional
+                // adventure video. The later dispatch reuses this already-open adventures page.
+                await EnsureHeroAdventureDispatchPageAsync(cancellationToken);
+
+                // Optionally raise the next adventure's danger to hard (bonus video) before dispatching.
+                // Self-skips if already active and never throws, so dispatch proceeds regardless.
+                if (_config.IncreaseAdventuresToHard)
+                {
+                    var hardResult = await IncreaseAdventuresToHardForSelectedAdventureAsync(adventurePickOrder, cancellationToken);
+                    Notify($"[hero] increase-adventures-to-hard: {hardResult}");
+                    actions.Add(hardResult.Contains("already hard", StringComparison.OrdinalIgnoreCase)
+                        ? "increase_danger_to_hard_skipped_already_hard"
+                        : "increase_danger_to_hard");
+                }
+
+                if (_config.ReduceAdventureTime)
+                {
+                    var reduceResult = await ReduceAdventuresTimeAsync(cancellationToken);
+                    Notify($"[hero] reduce-adventure-time: {reduceResult}");
+                    actions.Add("reduce_adventure_time");
+                }
+
+                var (sent, durationSeconds, returnSeconds) = await TrySendHeroToAdventureAsync(adventurePickOrder, cancellationToken);
+                heroReturnWaitSeconds = returnSeconds > 0 ? returnSeconds : durationSeconds > 0 ? durationSeconds * 2 : null;
+                if (sent)
+                {
+                    actions.Add($"adventure_sent({adventurePickOrder},duration={durationSeconds}s,return_eta={heroReturnWaitSeconds ?? 0}s)");
+                }
+                else
+                {
+                    actions.Add("adventure_not_clickable");
+                    // Button disabled even though the hero looks home/alive (e.g. just-revived cooldown).
+                    // Defer instead of completing, so the loop does not instantly re-queue (and re-watch the
+                    // danger video) in a tight loop that never resolves.
+                    heroReturnWaitSeconds ??= HeroAdventureBlockedRetrySeconds;
+                }
             }
         }
-        else if (!inVillage && !status.IsDead)
+        else if (presence == HeroPresence.Away && !status.IsDead)
         {
             actions.Add("adventure_skipped_hero_away");
             // Away is already authoritative in the global hero widget. Keep the current page instead of
             // opening adventures only to reconfirm it; use its timer when exposed, otherwise poll safely.
+            heroReturnWaitSeconds ??= HeroAdventureBlockedRetrySeconds;
+        }
+        else if (presence == HeroPresence.Unknown && !status.IsDead)
+        {
+            actions.Add("adventure_skipped_hero_status_unknown");
             heroReturnWaitSeconds ??= HeroAdventureBlockedRetrySeconds;
         }
         else if (adventureCount > 0 && !canSendByHp)
@@ -615,14 +658,19 @@ public sealed partial class TravianClient : IHeroClient
         var pointsText = quick.HasUnassignedPointsSignal
             ? (status.UnassignedPoints > 0 ? status.UnassignedPoints.ToString() : "signal")
             : status.UnassignedPoints.ToString();
-        var summary = $"Hero status: dead={status.IsDead}, hp={hpPercent?.ToString() ?? "?"}%, adventures={adventureCount}, points={pointsText}, in_village={inVillage}";
+        var summary = $"Hero status: dead={status.IsDead}, hp={hpPercent?.ToString() ?? "?"}%, adventures={adventureCount}, points={pointsText}, presence={presence}";
         // When the hero is away (not dead), always defer by the return ETA (or a sane fallback) so the
         // loop does not re-run hero_manage every second and the dashboard shows the return timer
         // instead of "Ready" — independent of the adventure count read while away.
-        if (!inVillage && !status.IsDead)
+        if (presence == HeroPresence.Away && !status.IsDead)
         {
             var awaitSeconds = heroReturnWaitSeconds is > 0 ? heroReturnWaitSeconds.Value : 300;
             return $"{summary}. Hero is away. queue_wait_seconds={awaitSeconds}";
+        }
+        if (presence == HeroPresence.Unknown && !status.IsDead)
+        {
+            var awaitSeconds = heroReturnWaitSeconds is > 0 ? heroReturnWaitSeconds.Value : HeroAdventureBlockedRetrySeconds;
+            return $"{summary}. Hero presence is unknown; Adventure navigation was blocked. queue_wait_seconds={awaitSeconds}";
         }
         // Schedule from the configured estimate, but the periodic current-page DOM read can release
         // this defer immediately as soon as live HP reaches the threshold.
@@ -718,31 +766,75 @@ public sealed partial class TravianClient : IHeroClient
             """);
     }
 
-    private async Task<bool> IsHeroInActiveVillageAsync(CancellationToken cancellationToken)
+    private async Task<HeroPresence> ReadHeroPresenceAsync(CancellationToken cancellationToken)
     {
+        var presence = await ReadHeroPresenceOnceAsync(cancellationToken);
+        if (presence != HeroPresence.Unknown)
+        {
+            return presence;
+        }
+
+        // An incomplete React render or a navigation boundary can temporarily remove the active
+        // hero icon. Retry the same live DOM once without navigating anywhere. Unknown remains
+        // fail-safe: callers must not open Adventures unless Home was observed explicitly.
+        await Task.Delay(250, cancellationToken);
+        presence = await ReadHeroPresenceOnceAsync(cancellationToken);
+        if (presence == HeroPresence.Unknown)
+        {
+            Notify($"[hero] presence is unknown after two current-page reads; adventure navigation is blocked. url='{_page.Url}'.");
+        }
+
+        return presence;
+    }
+
+    private async Task<HeroPresence> ReadHeroPresenceOnceAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         // Sidebar hero status icon on dorf1/dorf2 carries class names like heroStatus50 (in village),
         // heroStatus52/53 (on the way), heroStatus51 (dead). The status text (title/aria) is also localized.
-        var raw = await _page.EvaluateAsync<string>(
-            """
+        var urlBeforeRead = _page.Url;
+        string raw;
+        try
+        {
+            raw = await _page.EvaluateAsync<string>(
+                """
             () => {
               // Capture all signals before deciding: during a redirect Travian can briefly render a
               // stale home icon together with the authoritative running icon.
-              const icon = document.querySelector('.heroStatus, [class*="heroStatus"]');
-              const className = (icon?.className || '').toString();
+              const widget = document.querySelector('.heroStatus');
+              const activeIcon = widget?.querySelector(':scope > a i') || null;
+              const activeClassName = (activeIcon?.className || '').toString();
+              const className = (widget?.className || '').toString();
               const legacyMatch = className.match(/heroStatus(\d+)/i);
               const officialBox = document.querySelector('#topBarHero, #heroV2, .heroV2');
               const officialText = (officialBox?.textContent || '').toLowerCase();
               const box = document.querySelector('#sidebarBoxHero, .heroSidebar, .heroStatusMessage');
               return JSON.stringify({
-                reinforcing: !!document.querySelector('i.heroReinforcing, .heroState i.statusSupport_medium'),
-                running: !!document.querySelector('i.heroRunning, [class*="heroRunning"], [class*="statusRunning"]'),
-                home: !!document.querySelector('i.heroHome, [class*="heroHome"]') || /heroStatus(?:100|50|Home)\b/i.test(className),
+                reinforcing: /(?:^|\s)heroReinforcing(?:\s|$)/i.test(activeClassName)
+                  || !!document.querySelector('.heroState i.statusSupport_medium'),
+                running: /heroRunning|statusRunning/i.test(activeClassName)
+                  || !!document.querySelector('.heroState [class*="statusRunning"], .heroState [class*="heroRunning"]'),
+                home: /(?:^|\s)heroHome(?:\s|$)/i.test(activeClassName)
+                  || /heroStatus(?:100|50|Home)\b/i.test(className),
                 legacyStatus: legacyMatch ? Number(legacyMatch[1]) : null,
-                officialAway: !!document.querySelector('.heroState, .timerReact') || /on its way|on the way to|arrival in/.test(officialText),
+                officialAway: !!document.querySelector('.heroStatus .timerReact, .heroState .timerReact')
+                  || /on its way|on the way to|arrival in/.test(officialText),
                 sidebarText: (box?.textContent || '').toLowerCase()
               });
             }
             """);
+        }
+        catch (PlaywrightException ex) when (IsTransientExecutionContextError(ex))
+        {
+            Notify($"[hero:verbose] presence read crossed a navigation boundary: {ex.Message}");
+            return HeroPresence.Unknown;
+        }
+
+        if (!string.Equals(urlBeforeRead, _page.Url, StringComparison.OrdinalIgnoreCase))
+        {
+            Notify($"[hero:verbose] presence read was discarded because the page changed from '{urlBeforeRead}' to '{_page.Url}'.");
+            return HeroPresence.Unknown;
+        }
 
         HeroPresenceSignalsJs? signals = null;
         try
@@ -754,7 +846,9 @@ public sealed partial class TravianClient : IHeroClient
             Notify($"[hero:verbose] could not parse hero presence signals: {ex.Message}");
         }
 
-        return signals is null || HeroStatusDecision.ResolveIsInVillage(
+        return signals is null
+            ? HeroPresence.Unknown
+            : HeroStatusDecision.ResolvePresence(
             signals.Reinforcing,
             signals.Running,
             signals.Home,
@@ -787,9 +881,12 @@ public sealed partial class TravianClient : IHeroClient
     private sealed record HeroQuickStatus(
         HeroStatus Status,
         HeroSidebarStatusJs Sidebar,
-        bool IsInVillage,
+        HeroPresence Presence,
         int? HeroHpFromSidebar,
-        bool HasUnassignedPointsSignal);
+        bool HasUnassignedPointsSignal)
+    {
+        public bool IsInVillage => Presence == HeroPresence.Home;
+    }
 
     private sealed record HeroOintmentRetryKey(int AdventureCount, int HpPercent, int MinHpForAdventure, int TargetHpPercent);
 

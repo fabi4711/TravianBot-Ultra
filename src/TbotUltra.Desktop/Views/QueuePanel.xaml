@@ -61,10 +61,20 @@
                               ColumnHeaderHeight="28"
                               RowHeight="30"
                               MinHeight="90"
-                              MaxHeight="120"
+                              MaxHeight="180"
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                               ScrollViewer.VerticalScrollBarVisibility="Disabled"
                               FontSize="12">
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell" BasedOn="{StaticResource {x:Type DataGridCell}}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsWatchtower}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource PurpleBgBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource PurpleTextBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.CellStyle>
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Construction" Width="*" Binding="{Binding Name}" />
                             <DataGridTextColumn Header="Target" Width="78" Binding="{Binding LevelText}" />
@@ -384,7 +394,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Retries" Width="0.7*" MinWidth="70" Binding="{Binding Retries}" />
-                    <DataGridTextColumn Header="Created" Width="1.5*" MinWidth="150" Binding="{Binding CreatedAtServer}" />
+                    <DataGridTextColumn Header="Started in Travian" Width="1.5*" MinWidth="150" Binding="{Binding HistoryAtServer}" />
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>

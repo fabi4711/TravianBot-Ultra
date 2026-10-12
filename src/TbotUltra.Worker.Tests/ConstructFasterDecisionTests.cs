@@ -68,7 +68,13 @@ public sealed class ConstructFasterDecisionTests
     public void Evaluate_MinBuildTimeDisabled_UsesVideoRegardlessDuration()
     {
         var result = ConstructFasterDecision.Evaluate(
-            new BotOptions { ConstructFasterEnabled = true, ConstructFasterMinBuildTimeEnabled = false, ConstructFasterMinBuildMinutes = 30 },
+            new BotOptions
+            {
+                ConstructFasterEnabled = true,
+                ConstructFasterMinBuildTimeEnabled = false,
+                ConstructFasterMinBuildMinutes = 30,
+                ConstructFasterRandomEnabled = false,
+            },
             durationSeconds: 10,
             buttonPresent: true,
             buttonDisabled: false);

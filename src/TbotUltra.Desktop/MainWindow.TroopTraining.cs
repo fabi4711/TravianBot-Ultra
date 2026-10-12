@@ -181,15 +181,9 @@ public partial class MainWindow
             _troopTribeUnknownSkipLogged = false;
         }
 
-        var troopOptionsChanged = _troopTrainingViewModel.UpdateTroopOptions(tribe);
+        _troopTrainingViewModel.UpdateTroopOptions(tribe);
         var celebrationChanged = _troopTrainingViewModel.UpdateAutoCelebrationAvailability(tribe);
         RefreshReinforcementTroopRules(tribe);
-        if (troopOptionsChanged)
-        {
-            // A tribe change can swap an invalid troop selection for a fallback in the building rows —
-            // persist that to the selected village's override.
-            PersistTroopTrainingForSelectedVillage();
-        }
 
         if (celebrationChanged)
         {

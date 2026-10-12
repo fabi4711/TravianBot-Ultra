@@ -14,9 +14,18 @@ internal static class HeroInventoryProbePolicy
         => IsEmpty(snapshot.Resources)
             && (snapshot.NextProbeAtUtc is null || snapshot.NextProbeAtUtc <= now);
 
+    internal static bool ShouldRevalidateConstruction(HeroInventorySnapshot? snapshot, DateTimeOffset now)
+        => snapshot?.ConstructionProbe?.NextProbeAtUtc is not { } nextProbe || nextProbe <= now;
+
     internal static TimeSpan GetEmptyProbeDelay(int consecutiveEmptyObservations, double sample)
+        => GetBackoffDelay(consecutiveEmptyObservations, sample);
+
+    internal static TimeSpan GetConstructionProbeDelay(int consecutiveInsufficientObservations, double sample)
+        => GetBackoffDelay(consecutiveInsufficientObservations, sample);
+
+    private static TimeSpan GetBackoffDelay(int consecutiveObservations, double sample)
     {
-        var (minimumMinutes, maximumMinutes) = consecutiveEmptyObservations switch
+        var (minimumMinutes, maximumMinutes) = consecutiveObservations switch
         {
             <= 1 => (15d, 30d),
             2 => (30d, 45d),

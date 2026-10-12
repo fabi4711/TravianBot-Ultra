@@ -70,7 +70,7 @@ public sealed partial class TravianClient
                 "Capital village required.");
         }
 
-        await GotoAsync(Paths.BuildBySlot(brewerySlotId.Value), cancellationToken);
+        await OpenSlotFromOverviewAsync(brewerySlotId.Value, cancellationToken);
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
 
         var pageStatus = await ReadBreweryCelebrationStatusFromCurrentPageAsync(cancellationToken);
@@ -122,12 +122,12 @@ public sealed partial class TravianClient
                     ];
                     for (const c of candidates) {
                       const slot = slotFromText(c);
-                      if (slot && slot >= 19 && slot <= 40) return slot;
+                      if (slot && slot >= 19 && slot <= 43) return slot;
                     }
                     let parent = el.parentElement;
                     for (let i = 0; parent && i < 4; i++, parent = parent.parentElement) {
                       const slot = slotFromText((parent.className || '') + ' ' + (parent.getAttribute && parent.getAttribute('href') || ''));
-                      if (slot && slot >= 19 && slot <= 40) return slot;
+                      if (slot && slot >= 19 && slot <= 43) return slot;
                     }
                     return null;
                   };
@@ -170,7 +170,7 @@ public sealed partial class TravianClient
             if (payload.TryGetProperty("slotId", out var slotIdNode)
                 && slotIdNode.ValueKind == JsonValueKind.Number
                 && slotIdNode.TryGetInt32(out var slot)
-                && slot is >= 19 and <= 40)
+                && slot is >= 19 and <= 43)
             {
                 var source = payload.TryGetProperty("source", out var sourceNode) ? sourceNode.GetString() : null;
                 Notify($"[brewery:verbose] fallback probe found slot {slot} via {source ?? "unknown"}");
@@ -278,7 +278,7 @@ public sealed partial class TravianClient
             await EnsureLoggedInAsync(cancellationToken: cancellationToken);
         }
 
-        await GotoAsync(Paths.BuildBySlot(status.BrewerySlotId.Value), cancellationToken);
+        await OpenSlotFromOverviewAsync(status.BrewerySlotId.Value, cancellationToken);
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
 
         var startedStatus = await ReadBreweryCelebrationStatusFromCurrentPageAsync(cancellationToken);

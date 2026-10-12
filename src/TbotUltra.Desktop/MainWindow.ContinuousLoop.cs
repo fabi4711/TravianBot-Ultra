@@ -27,6 +27,7 @@ public partial class MainWindow
     private string? _confirmedVillageMembershipSignature;
     private DateTimeOffset _confirmedVillageMembershipAtUtc = DateTimeOffset.MinValue;
     private bool _differentAvatarHoldActive;
+    private long? _postLoginConstructionSyncGeneration;
 
     private DateTimeOffset GetContinuousKeepAliveNextReloadUtc()
         => _automationDesk.NextKeepAliveAtUtc;
@@ -123,6 +124,23 @@ public partial class MainWindow
                 village.Url,
                 cancellationToken);
 
+    private void ApplyVillageStatusSweepToUi(VillageStatus status)
+    {
+        ApplyResourceRowsAndVillageStatus(status, includeQueuedTargets: true);
+        if (status.Buildings is { Count: > 0 })
+        {
+            _lastBuildingStatus = status;
+            PopulateBuildingsTab(status);
+            BuildingsInfoTextBlock.Text = _buildingsViewModel.DescribeLoadedSlots(
+                $"Village scan for '{status.ActiveVillage}'");
+        }
+
+        ApplyConstructionTimerFromStatus(status);
+        AppendLog(
+            $"[village-scan:verbose] refreshed selected village UI: "
+            + $"village='{status.ActiveVillage}', fields={status.ResourceFields.Count}, buildings={status.Buildings.Count}.");
+    }
+
     private async Task<(VillageStatus Status, bool ShouldContinue, int Attempts)> CollectVillageStatusSweepRewardsAsync(
         BotOptions options,
         VillageSelectionItem village,
@@ -203,7 +221,7 @@ public partial class MainWindow
                 activeVillageCoordY: status.ActiveVillageCoordY);
             if (IsStatusForSelectedVillage(status))
             {
-                ApplyVillageStatusToUi(status);
+                ApplyVillageStatusSweepToUi(status);
             }
         });
 
@@ -244,7 +262,7 @@ public partial class MainWindow
                     CacheVillageStatus(status, village.Name, triggerDeferredWaitRefresh: false);
                     if (IsStatusForSelectedVillage(status))
                     {
-                        ApplyVillageStatusToUi(status);
+                        ApplyVillageStatusSweepToUi(status);
                     }
                 });
             }
@@ -279,7 +297,7 @@ public partial class MainWindow
                     CacheVillageStatus(status, village.Name, triggerDeferredWaitRefresh: false);
                     if (IsStatusForSelectedVillage(status))
                     {
-                        ApplyVillageStatusToUi(status);
+                        ApplyVillageStatusSweepToUi(status);
                     }
                 });
             }
@@ -423,6 +441,10 @@ public partial class MainWindow
         CancellationToken cancellationToken)
     {
         var postLoginRound = _automationDesk.LoginVillageStatusRoundPending;
+        if (postLoginRound && villageNumber == 1)
+            _postLoginConstructionSyncGeneration = _automationDesk.ConstructionStatusSyncGeneration;
+        var constructionSyncGeneration = _postLoginConstructionSyncGeneration;
+        VillageStatus? finalVisitStatus = null;
         using var villageActivity = _dashboardActivityTracker.Begin(
             $"{(postLoginRound ? "Village round" : "Village scan")} ({villageNumber}/{villageCount}): {village.Name}");
         cancellationToken.ThrowIfCancellationRequested();
@@ -439,6 +461,8 @@ public partial class MainWindow
                         CacheVillageStatus(status, targetVillage.Name, triggerDeferredWaitRefresh: false);
                         SetActiveWorkingVillageFromStatus(status);
                         ReconcilePendingBuildingQueueWithLiveStatus(status);
+                        if (postLoginRound && villageNumber == villageCount)
+                            finalVisitStatus = status;
                         if (postLoginRound)
                         {
                             PrepareConstructionLoginFill(
@@ -454,7 +478,7 @@ public partial class MainWindow
                             activeVillageCoordY: status.ActiveVillageCoordY);
                         if (IsStatusForSelectedVillage(status))
                         {
-                            ApplyVillageStatusToUi(status);
+                            ApplyVillageStatusSweepToUi(status);
                         }
                     });
                 },
@@ -470,6 +494,8 @@ public partial class MainWindow
                         targetVillage,
                         status,
                         token);
+                    if (postLoginRound && villageNumber == villageCount)
+                        finalVisitStatus = result.Status;
                     return new VillageStatusCollectionResult<VillageStatus>(
                         result.Status,
                         result.ShouldContinue,
@@ -503,12 +529,34 @@ public partial class MainWindow
                             targetVillage.CoordX,
                             targetVillage.CoordY),
                         token));
-            return await _villageStatusReactionCoordinator.RunAsync(
+            var visit = await _villageStatusReactionCoordinator.RunAsync(
                 village,
                 options.VillageStatusSweepDorf1Enabled || postLoginRound,
                 inboxStatusChecked,
                 port,
                 cancellationToken);
+            if (postLoginRound && villageNumber == villageCount)
+            {
+                if (visit.ShouldContinue
+                    && finalVisitStatus is not null
+                    && constructionSyncGeneration.HasValue
+                    && ConstructionStatusSyncPolicy.IsCompleteFinalVisit(
+                        finalVisitStatus, village.CoordX, village.CoordY, villageNumber, villageCount)
+                    && _automationDesk.TryMarkConstructionStatusSynchronized(constructionSyncGeneration.Value))
+                {
+                    AppendLog("[village-round] final live Dorf1/Dorf2 status satisfied pending construction sync.");
+                }
+                else if (_automationDesk.ConstructionStatusNeedsSync)
+                {
+                    AppendLog(
+                        $"[village-round] final status did not satisfy construction sync; "
+                        + $"village='{village.Name}' fields={finalVisitStatus?.ResourceFields.Count ?? 0} "
+                        + $"buildings={finalVisitStatus?.Buildings.Count ?? 0} city={finalVisitStatus?.CityStatus} "
+                        + $"requestChanged={constructionSyncGeneration != _automationDesk.ConstructionStatusSyncGeneration}; "
+                        + "full-read fallback remains pending.");
+                }
+            }
+            return visit;
         }
         catch (OperationCanceledException)
         {
@@ -904,23 +952,31 @@ public partial class MainWindow
 
         // Account is a queue category, not a user-configurable automation group. Keep it permanently
         // considered even when every village toggle group is disabled.
-        var ordered = new List<QueueGroup> { QueueGroup.Account };
-        ordered.AddRange(GetContinuousLoopEnabledGroupsInOrder());
-        var seen = ordered.ToHashSet();
+        var enabled = GetContinuousLoopEnabledGroupsInOrder().ToHashSet();
+        // NPC Trade has no Dashboard toggle, but queued NPC work still follows the saved group order.
+        enabled.Add(QueueGroup.NpcTrade);
 
         foreach (var (_, enabledGroups) in _villageSettingsStore.GetEnabledVillagesGroups())
         {
             foreach (var key in enabledGroups ?? VillageSettingsStore.DefaultEnabledGroups)
             {
                 if (QueueGroupCatalog.TryParse(key, out var group)
-                    && group != QueueGroup.Account
-                    && seen.Add(group))
+                    && group != QueueGroup.Account)
                 {
-                    ordered.Add(group);
+                    enabled.Add(group);
                 }
             }
         }
 
+        var ordered = new List<QueueGroup> { QueueGroup.Account };
+        foreach (var key in _continuousLoopGroupOrder)
+        {
+            if (QueueGroupCatalog.TryParse(key, out var group) && enabled.Remove(group))
+            {
+                ordered.Add(group);
+            }
+        }
+        ordered.AddRange(enabled.OrderBy(group => group));
         return ordered;
     }
 
@@ -1141,6 +1197,7 @@ public partial class MainWindow
         try
         {
             using var activity = _dashboardActivityTracker.Begin("Refreshing construction status");
+            var syncGeneration = _automationDesk.ConstructionStatusSyncGeneration;
             var status = await ReadVillageStatusWithRetryAsync(
                 options,
                 cancellationToken,
@@ -1157,7 +1214,8 @@ public partial class MainWindow
                     PopulateBuildingsTab(status);
                 }
             });
-            _automationDesk.MarkConstructionStatusSynchronized();
+            if (!_automationDesk.TryMarkConstructionStatusSynchronized(syncGeneration))
+                AppendLog("[construction-status] a newer sync request remains pending after the full read.");
         }
         catch (OperationCanceledException)
         {
@@ -1172,7 +1230,7 @@ public partial class MainWindow
     private async Task EnsureContinuousFarmListsReadyAsync(BotOptions options, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var farmingEnabled = GetContinuousLoopEnabledGroupsInOrder().Contains(QueueGroup.Farming);
+        var farmingEnabled = GetContinuousLoopConsideredGroupsInOrder().Contains(QueueGroup.Farming);
         if (!farmingEnabled || _farmingOperationBusy)
         {
             return;
@@ -1385,7 +1443,8 @@ public partial class MainWindow
             allowIndependentCategoryLookAhead,
             firstItem is null
                 ? RomanConstructionPriority.Auto
-                : LoadBotOptions().ConstructionRomanPriority);
+                : LoadBotOptions().ConstructionRomanPriority,
+            index => ResolveWatchtowerBlockReason(orderedGroupItems[index]));
         skipReason = selection.SkipReason;
 
         if (selection.QueueFullBlocker is not null && !preview)
@@ -1415,8 +1474,12 @@ public partial class MainWindow
         if (selection.UsedIndependentCategoryLookAhead && !preview)
         {
             var villageName = NormalizeVillageName(GetQueueItemVillageName(selection.Item)) ?? "-";
+            var lane = ConstructionQueueState.IsWatchtowerTask(selection.Item.TaskName)
+                || (firstItem is not null && ConstructionQueueState.IsWatchtowerTask(firstItem.TaskName))
+                ? "Watchtower lane"
+                : "Roman category";
             AppendLog(
-                $"[construction-queue] Roman category look-ahead selected " +
+                $"[construction-queue] {lane} look-ahead selected " +
                 $"task='{selection.Item.TaskName}' village='{villageName}' because the earlier category is blocked.");
         }
         else if (selection.UsedRomanPriority && !preview)
@@ -1434,7 +1497,9 @@ public partial class MainWindow
             return null;
         }
 
-        if (!preview && TryPrepareConstructionStartDelay(selection.Item, now, out var humanizeSkipReason))
+        if (!preview
+            && !ConstructionQueueState.IsWatchtowerTask(selection.Item.TaskName)
+            && TryPrepareConstructionStartDelay(selection.Item, now, out var humanizeSkipReason))
         {
             skipReason = humanizeSkipReason;
             return null;
@@ -1543,10 +1608,21 @@ public partial class MainWindow
             [BotOptionPayloadKeys.QueueHumanizeExtraSeconds] = decision.HumanizeExtraSeconds.ToString(),
             [BotOptionPayloadKeys.ConstructionHumanizePreNavigationDelaySatisfied] = "true",
         };
-        if (!_botService.UpdateDeferredQueueItem(
-                item.Id, payload, TimeSpan.FromSeconds(decision.QueueRetrySeconds)))
+        if (!_botService.PatchDeferredQueueItem(
+                item.Id,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [BotOptionPayloadKeys.UpgradeDeferReason] = BotOptionPayloadKeys.UpgradeDeferReasonQueueFull,
+                    [BotOptionPayloadKeys.UpgradeDeferClassificationVersion] =
+                        ConstructionQueueState.CurrentDeferClassificationVersion,
+                    [BotOptionPayloadKeys.QueueHumanizeExtraSeconds] = decision.HumanizeExtraSeconds.ToString(),
+                    [BotOptionPayloadKeys.ConstructionHumanizePreNavigationDelaySatisfied] = "true",
+                },
+                null,
+                TimeSpan.FromSeconds(decision.QueueRetrySeconds),
+                item.Payload.GetValueOrDefault(BotOptionPayloadKeys.UpgradeDeferReason) ?? string.Empty))
         {
-            AppendLog($"[construction-timing] could not persist full-queue pre-navigation delay id={item.Id} task='{item.TaskName}'.");
+            AppendLog($"[construction-timing] full-queue pre-navigation delay skipped after queue state changed id={item.Id} task='{item.TaskName}'.");
             return;
         }
 
@@ -1639,9 +1715,56 @@ public partial class MainWindow
         var status = item is null
             ? ResolveSelectedVillageBuildingStatus()
             : ResolveBuildingStatusForQueueItem(item);
+        if (item is not null && ConstructionQueueState.IsWatchtowerTask(item.TaskName))
+        {
+            var watchtower = status?.WatchtowerStatus;
+            return watchtower is null
+                ? ConstructionQueueAvailability.Unknown
+                : watchtower.QueueFull
+                    ? ConstructionQueueAvailability.Full
+                    : ConstructionQueueAvailability.Available;
+        }
+
         return item is null
             ? ConstructionQueueState.ResolveAvailability(status, _travianPlusActive, now)
             : ConstructionQueueState.ResolveAvailabilityForItem(status, _travianPlusActive, item, now);
+    }
+
+    private string? ResolveWatchtowerBlockReason(QueueItem item)
+    {
+        if (!ConstructionQueueState.IsWatchtowerTask(item.TaskName))
+        {
+            return null;
+        }
+
+        var status = ResolveBuildingStatusForQueueItem(item);
+        if (status is null)
+        {
+            return "waiting for a village building scan; no navigation will be attempted";
+        }
+
+        if (status.CityCapability != CityCapability.Enabled)
+        {
+            return $"Cities capability is {status.CityCapability}; Watchtowers require a confirmed Cities server";
+        }
+
+        if (status.CityStatus != CityStatus.City)
+        {
+            return $"village status is {status.CityStatus}; Watchtowers require a confirmed City";
+        }
+
+        var wall = status.Buildings.FirstOrDefault(building => building.SlotId == 40);
+        if (wall is null || (wall.Level ?? 0) < 1)
+        {
+            return "the village has no constructed wall";
+        }
+
+        if (status.WatchtowerStatus is null)
+        {
+            return "Watchtower status is unknown; use Load buildings once to inspect the wall";
+        }
+
+        return null;
     }
 
     private void LogConstructionQueueFullSummary(QueueItem blocker, int blockedItems, DateTimeOffset now)

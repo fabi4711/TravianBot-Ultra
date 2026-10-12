@@ -20,6 +20,22 @@ public sealed class SettingsConfigurationProjectionTests
         Assert.Equal(ConstructionDefaults.MainBuildingRebuildTargetLevel, settings.Options.ConstructionMainBuildingRebuildTargetLevel);
         Assert.Equal(ConstructionDefaults.RomanPriority, settings.Options.ConstructionRomanPriority);
         Assert.Equal(FarmingDefaults.DefaultLastSentLimitHours, settings.Options.FarmListLastSentLimitHours);
+        Assert.False(settings.SessionPacing.SessionPacingEnabled);
+        Assert.True(settings.SessionPacing.SmartSleepEnabled);
+        Assert.True(settings.SessionPacing.SmartSleepMaxRuntimeEnabled);
+        Assert.Equal(120, settings.SessionPacing.SmartSleepMaxRuntimeMinutes);
+        Assert.Equal(20, settings.SessionPacing.SmartSleepMaxRuntimeSleepMinutes);
+        Assert.Equal(20, settings.SessionPacing.SmartSleepMaxRuntimeVariationPercent);
+        Assert.Equal(10, settings.SessionPacing.SessionRunMinMinutes);
+        Assert.Equal(40, settings.SessionPacing.SessionRunMaxMinutes);
+        Assert.Equal(30, settings.SessionPacing.SessionSleepMinMinutes);
+        Assert.Equal(60, settings.SessionPacing.SessionSleepMaxMinutes);
+        Assert.Equal(20, settings.SessionPacing.SmartSleepMinimumOpportunityMinutes);
+        Assert.Equal(10, settings.SessionPacing.SmartSleepWakeBeforeMinutes);
+        Assert.Equal(15, settings.SessionPacing.SmartSleepWakeAfterMinutes);
+        Assert.Equal(90, settings.SessionPacing.SmartSleepFallbackMinMinutes);
+        Assert.Equal(180, settings.SessionPacing.SmartSleepFallbackMaxMinutes);
+        Assert.True(settings.SessionPacing.SmartSleepWakeWhenConstructionQueueClears);
         Assert.Equal(["construction", "hero"], settings.SessionPacing.SmartSleepDeadlineGroups);
         Assert.Equal(Enumerable.Range(0, 24), settings.SessionPacing.SessionAllowedHours);
     }
@@ -39,6 +55,10 @@ public sealed class SettingsConfigurationProjectionTests
             },
             SessionPacing = current.SessionPacing with
             {
+                SmartSleepMaxRuntimeEnabled = false,
+                SmartSleepMaxRuntimeMinutes = 95,
+                SmartSleepMaxRuntimeSleepMinutes = 25,
+                SmartSleepMaxRuntimeVariationPercent = 30,
                 SmartSleepFallbackMinMinutes = 60,
                 SmartSleepFallbackMaxMinutes = 20,
                 SessionAllowedHours = [-1, 4, 4, 24],
@@ -66,6 +86,10 @@ public sealed class SettingsConfigurationProjectionTests
         Assert.True(reloaded.Options.StartBrowserMinimized);
         Assert.Equal(23, reloaded.General.DailyServerResetHour);
         Assert.Equal(60, reloaded.SessionPacing.SmartSleepFallbackMinMinutes);
+        Assert.False(reloaded.SessionPacing.SmartSleepMaxRuntimeEnabled);
+        Assert.Equal(95, reloaded.SessionPacing.SmartSleepMaxRuntimeMinutes);
+        Assert.Equal(25, reloaded.SessionPacing.SmartSleepMaxRuntimeSleepMinutes);
+        Assert.Equal(30, reloaded.SessionPacing.SmartSleepMaxRuntimeVariationPercent);
         Assert.Equal(60, reloaded.SessionPacing.SmartSleepFallbackMaxMinutes);
         Assert.Equal([4], reloaded.SessionPacing.SessionAllowedHours);
         Assert.Equal(80, reloaded.Options.ConstructionHumanizeQueuePercentMin);

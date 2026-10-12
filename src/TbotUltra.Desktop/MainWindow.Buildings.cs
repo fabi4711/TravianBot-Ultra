@@ -122,7 +122,7 @@ public partial class MainWindow
         _buildingsViewModel.ClearQueueInteractionState();
 
         var candidateRows = _buildingRows
-            .Where(row => row.SlotId is >= 19 and <= 40)
+            .Where(row => row.SlotId is >= 19 and <= 43)
             .Where(row => (row.IsOccupied && !row.IsMaxLevel) || row.HasPendingConstruct)
             .GroupBy(row => row.SlotId)
             .Select(group => group.First())
@@ -493,6 +493,9 @@ public partial class MainWindow
             case BuildingSlotAction.UpgradeToMax:
                 TryQueueBuildingUpgradeToMax(row.SlotId);
                 break;
+            case BuildingSlotAction.UpgradeWatchtowers:
+                ShowWatchtowerTarget(row);
+                break;
             case BuildingSlotAction.Demolish:
                 ShowDemolishTargetForSlot(row);
                 break;
@@ -581,6 +584,52 @@ public partial class MainWindow
         }
 
         _ = TryQueueBuildingUpgradeToLevel(liveRow.SlotId, targetWindow.SelectedTargetLevel);
+    }
+
+    private void ShowWatchtowerTarget(BuildingSlotRow wallRow)
+    {
+        if (wallRow.WatchtowerUpgradeBaseLevel is not int currentLevel)
+        {
+            BuildingsInfoTextBlock.Text = "Watchtower level is unavailable. Load buildings to refresh the status.";
+            AppendLog("[watchtower-ui] Upgrade target unavailable: the selected wall has no confirmed Watchtower level.");
+            return;
+        }
+
+        if (currentLevel >= 20)
+        {
+            BuildingsInfoTextBlock.Text = "Watchtowers are already max level (20).";
+            return;
+        }
+
+        AppendLog($"[watchtower-ui] Opening upgrade target for slot {wallRow.SlotId}: current projected level {currentLevel}.");
+
+        var targetRow = new BuildingSlotRow
+        {
+            SlotId = 40,
+            Name = "Watchtowers",
+            Level = currentLevel,
+            Gid = null,
+        };
+        var targetWindow = new BuildingUpgradeTargetWindow(
+            targetRow,
+            20,
+            targetLevel => BuildWatchtowerRangeEstimate(currentLevel + 1, targetLevel))
+        {
+            Owner = this,
+        };
+        if (targetWindow.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var payload = new BuildingUpgradePayload(40, targetWindow.SelectedTargetLevel, "Watchtowers").ToDictionary();
+        ApplySelectedVillageToPayload(payload);
+        var created = _buildingsPanelService.EnqueueBatch(
+            [new QueueItemCreateRequest("upgrade_watchtowers_to_level", payload, 0, 3)]);
+        RequestQueueUiRefresh(selectId: created.LastOrDefault()?.Id);
+        TriggerQueueAutoRunFromEnqueue();
+        BuildingsInfoTextBlock.Text = $"Queued Watchtowers to level {targetWindow.SelectedTargetLevel} (separate 2-slot Watchtower queue).";
+        AppendLog($"Queued Watchtowers upgrade: level {currentLevel} -> {targetWindow.SelectedTargetLevel}.");
     }
 
     private void QueueSingleBuildingUpgradeFromSlot(int slotId)
@@ -753,7 +802,8 @@ public partial class MainWindow
                 continue;
             }
 
-            if (!BuildingCatalogService.CanConstructInVillage(entry.Gid, status.IsCapital, out var locationReason))
+            if (!BuildingCatalogService.CanConstructInVillage(
+                    entry.Gid, status.IsCapital, status.Tribe, status.CityCapability, status.CityStatus, out var locationReason))
             {
                 option.Availability = BuildingConstructAvailability.Unavailable;
                 option.UnavailableReason = locationReason;
@@ -863,7 +913,13 @@ public partial class MainWindow
     {
         reason = string.Empty;
         var projectedStatus = BuildProjectedBuildingStatus(sourceStatus);
-        if (!BuildingCatalogService.CanConstructInVillage(selectedBuilding.Gid, projectedStatus.IsCapital, out reason))
+        if (!BuildingCatalogService.CanConstructInVillage(
+                selectedBuilding.Gid,
+                projectedStatus.IsCapital,
+                projectedStatus.Tribe,
+                projectedStatus.CityCapability,
+                projectedStatus.CityStatus,
+                out reason))
         {
             return false;
         }
@@ -1224,12 +1280,12 @@ public partial class MainWindow
         });
     }
 
-    // Matches Travian's in-progress construction list to known
-    // slots by normalized name + (target level - 1), returning slot -> target level. Only UNAMBIGUOUS
-    // matches are returned: if a construction could map to more than one slot (e.g. several croplands at
-    // the same level), it is dropped rather than guessing the wrong field. Brand-new buildings are included
-    // so a live level-0 slot with target level 1 is rendered as "Level 0 (1)" like any other upgrade.
-    private static Dictionary<int, int> BuildExternalUpgradeTargetsBySlot(
+    // Matches Travian's in-progress construction list to known slots by normalized name and level,
+    // returning slot -> highest contiguous target level. A unique building may have multiple levels queued;
+    // duplicate-name slots still require an unambiguous current-level match rather than guessing the target.
+    // Brand-new buildings are included so a live level-0 slot with target level 1 is rendered as
+    // "Level 0 (1)" like any other upgrade.
+    internal static Dictionary<int, int> BuildExternalUpgradeTargetsBySlot(
         IReadOnlyList<ActiveConstruction>? activeConstructions,
         ConstructionKind kind,
         IEnumerable<(int Slot, string? Name, int? Level)> slots)
@@ -1242,40 +1298,70 @@ public partial class MainWindow
 
         var slotList = slots.ToList();
         var ambiguousSlots = new HashSet<int>();
-        foreach (var construction in activeConstructions)
+        var constructionsByName = activeConstructions
+            .Where(construction => construction.Kind == kind && construction.Level is >= 1)
+            .Select(construction => new
+            {
+                Construction = construction,
+                Name = NormalizeConstructionName(construction.Name),
+            })
+            .Where(item => item.Name.Length > 0)
+            .GroupBy(item => item.Name, StringComparer.Ordinal);
+
+        foreach (var constructionGroup in constructionsByName)
         {
-            if (construction.Kind != kind || construction.Level is not int target || target < 1)
-            {
-                continue;
-            }
-
-            var name = NormalizeConstructionName(construction.Name);
-            if (name.Length == 0)
-            {
-                continue;
-            }
-
-            var candidateSlots = slotList
-                .Where(slot => (slot.Level ?? 0) == target - 1
-                    && string.Equals(NormalizeConstructionName(slot.Name), name, StringComparison.Ordinal))
-                .Select(slot => slot.Slot)
+            var matchingSlots = slotList
+                .Where(slot => string.Equals(
+                    NormalizeConstructionName(slot.Name),
+                    constructionGroup.Key,
+                    StringComparison.Ordinal))
                 .ToList();
 
-            // Skip when we cannot tell exactly which field/building is being upgraded.
-            if (candidateSlots.Count != 1)
+            if (matchingSlots.Count == 1)
             {
+                var slot = matchingSlots[0];
+                var projectedLevel = slot.Level ?? 0;
+                var queuedLevels = constructionGroup
+                    .Select(item => item.Construction.Level!.Value)
+                    .ToHashSet();
+
+                while (queuedLevels.Contains(projectedLevel + 1))
+                {
+                    projectedLevel += 1;
+                }
+
+                if (projectedLevel > (slot.Level ?? 0))
+                {
+                    result[slot.Slot] = projectedLevel;
+                }
+
                 continue;
             }
 
-            var slotId = candidateSlots[0];
-            if (result.ContainsKey(slotId))
+            foreach (var item in constructionGroup)
             {
-                // Two constructions resolve to the same slot — ambiguous, drop it.
-                ambiguousSlots.Add(slotId);
-                continue;
-            }
+                var target = item.Construction.Level!.Value;
+                var candidateSlots = matchingSlots
+                    .Where(slot => (slot.Level ?? 0) == target - 1)
+                    .Select(slot => slot.Slot)
+                    .ToList();
 
-            result[slotId] = target;
+                // Skip when we cannot tell exactly which field/building is being upgraded.
+                if (candidateSlots.Count != 1)
+                {
+                    continue;
+                }
+
+                var slotId = candidateSlots[0];
+                if (result.ContainsKey(slotId))
+                {
+                    // Two constructions resolve to the same duplicate-name slot — ambiguous, drop it.
+                    ambiguousSlots.Add(slotId);
+                    continue;
+                }
+
+                result[slotId] = target;
+            }
         }
 
         foreach (var slotId in ambiguousSlots)
@@ -1343,7 +1429,8 @@ public partial class MainWindow
             buildingBySlot.Select(kv => (kv.Key, (string?)kv.Value.Name, kv.Value.Level)));
 
         var occupiedCount = 0;
-        foreach (var slotId in Enumerable.Range(19, 22))
+        var overviewSlots = BuildingSlotPolicy.OverviewSlots(status.CityStatus);
+        foreach (var slotId in overviewSlots)
         {
             buildingBySlot.TryGetValue(slotId, out var building);
             var (occupied, slotName, slotLevel, slotGid) =
@@ -1418,6 +1505,13 @@ public partial class MainWindow
                 MapTop = layout.Top,
                 IsWallSlot = isWallSlot,
                 IsRallyPointSlot = isRallyPointSlot,
+                WatchtowerLevel = isWallSlot ? status.WatchtowerStatus?.Level : null,
+                WatchtowerProjectedLevel = isWallSlot ? status.WatchtowerStatus?.ProjectedLevel : null,
+                CanQueueWatchtowers = isWallSlot
+                    && occupied
+                    && status.CityCapability == CityCapability.Enabled
+                    && status.CityStatus == CityStatus.City
+                    && status.WatchtowerStatus is not null,
             };
             _buildingRows.Add(row);
 
@@ -1428,7 +1522,7 @@ public partial class MainWindow
         }
 
         PopulateBuildingCatalogOptions(status);
-        BuildingsInfoTextBlock.Text = $"Buildings loaded. Occupied slots: {occupiedCount}, free slots: {22 - occupiedCount}.";
+        BuildingsInfoTextBlock.Text = $"Buildings loaded. Occupied slots: {occupiedCount}, free slots: {overviewSlots.Count - occupiedCount}.";
 
         // The Main Building level just became available for this village. Recompute the queue estimates
         // so already-queued items reflect the build-time discount. Skipped when this call came from

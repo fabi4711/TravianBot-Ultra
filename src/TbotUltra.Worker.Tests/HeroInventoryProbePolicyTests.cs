@@ -34,6 +34,20 @@ public sealed class HeroInventoryProbePolicyTests
         Assert.False(HeroInventoryProbePolicy.ShouldProbe(snapshot, now));
     }
 
+    [Fact]
+    public void ConstructionRevalidation_AppliesToNonEmptyInsufficientCacheAtSharedDeadline()
+    {
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var snapshot = new HeroInventorySnapshot(
+            new HeroInventoryResources(Wood: 5),
+            now.AddHours(-1),
+            HeroInventoryObservationSource.TransferDialog,
+            ConstructionProbe: new HeroConstructionProbeState(1, now.AddMinutes(1)));
+
+        Assert.False(HeroInventoryProbePolicy.ShouldRevalidateConstruction(snapshot, now));
+        Assert.True(HeroInventoryProbePolicy.ShouldRevalidateConstruction(snapshot, now.AddMinutes(1)));
+    }
+
     [Theory]
     [InlineData(1, 0d, 15)]
     [InlineData(1, 1d, 30)]
@@ -49,5 +63,20 @@ public sealed class HeroInventoryProbePolicyTests
         Assert.Equal(
             TimeSpan.FromMinutes(expectedMinutes),
             HeroInventoryProbePolicy.GetEmptyProbeDelay(consecutiveEmptyObservations, sample));
+    }
+
+    [Theory]
+    [InlineData(1, 0d, 15)]
+    [InlineData(2, 1d, 45)]
+    [InlineData(3, 0d, 45)]
+    [InlineData(8, 1d, 60)]
+    public void ConstructionProbeDelay_UsesSharedProgressiveBackoff(
+        int consecutiveInsufficientObservations,
+        double sample,
+        int expectedMinutes)
+    {
+        Assert.Equal(
+            TimeSpan.FromMinutes(expectedMinutes),
+            HeroInventoryProbePolicy.GetConstructionProbeDelay(consecutiveInsufficientObservations, sample));
     }
 }

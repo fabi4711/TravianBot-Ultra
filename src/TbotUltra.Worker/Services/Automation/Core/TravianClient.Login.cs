@@ -34,6 +34,7 @@ public sealed partial class TravianClient : ISessionClient
             {
                 MarkSessionLoggedIn();
                 Notify($"[login] already logged in as '{_account.Name}'");
+                await RefreshCityCapabilityAsync(cancellationToken);
                 await ConfirmExpectedLanguageIfEnabledAndRefreshAccountSignalsAsync(cancellationToken);
                 return;
             }
@@ -117,6 +118,7 @@ public sealed partial class TravianClient : ISessionClient
 
                 MarkSessionLoggedIn();
                 Notify($"[login] success ({_account.Name}) — entered through the Travian lobby");
+                await RefreshCityCapabilityAsync(cancellationToken);
                 await ConfirmExpectedLanguageIfEnabledAndRefreshAccountSignalsAsync(cancellationToken);
                 return;
             }
@@ -385,6 +387,71 @@ public sealed partial class TravianClient : ISessionClient
     private async Task<bool> IsLoggedInAsync(CancellationToken cancellationToken = default)
     {
         return (await LoginStateAsync(cancellationToken)) == AccountAccessState.LoggedIn;
+    }
+
+    private async Task RefreshCityCapabilityAsync(CancellationToken cancellationToken)
+    {
+        var previous = _session.CityCapability;
+        var current = CityCapability.Unknown;
+        var source = "authenticated-page-runtime";
+        var unknownReason = string.Empty;
+        try
+        {
+            var runtimeCities = await _page.EvaluateAsync<bool?>(
+                "() => { const flags = typeof T4_feature_flags !== 'undefined' ? T4_feature_flags : globalThis.T4_feature_flags; return flags && typeof flags.cities === 'boolean' ? flags.cities : null; }");
+            if (runtimeCities.HasValue)
+            {
+                current = runtimeCities.Value ? CityCapability.Enabled : CityCapability.Disabled;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            unknownReason = $"runtime probe failed: {ex.Message}";
+        }
+
+        if (current == CityCapability.Unknown)
+        {
+            source = "anonymous-login-html";
+            try
+            {
+                var html = await _page.EvaluateAsync<string>(
+                    "async url => { const response = await fetch(url, { credentials: 'omit', cache: 'no-store' }); return response.ok ? await response.text() : ''; }",
+                    ResolveUrl("/login.php"));
+                current = CityCapabilityParser.Parse(html);
+                if (current == CityCapability.Unknown)
+                {
+                    unknownReason = string.IsNullOrWhiteSpace(html)
+                        ? "empty login response"
+                        : "cities flag missing or unreadable";
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                unknownReason = $"anonymous login probe failed: {ex.Message}";
+            }
+        }
+
+        var resolved = _session.ObserveCityCapability(current);
+        if (current == CityCapability.Unknown && resolved != CityCapability.Unknown)
+        {
+            if (_session.LogValueChanged("city-capability-retained", $"{resolved}:{source}:{unknownReason}"))
+            {
+                var reason = string.IsNullOrWhiteSpace(unknownReason) ? string.Empty : $" reason='{unknownReason}'";
+                Notify($"[city] capability={resolved} source=retained-known-state probe={source}{reason}");
+            }
+
+            return;
+        }
+
+        if (current == CityCapability.Unknown
+            || previous != resolved
+            || _session.LogValueChanged("city-capability", resolved.ToString()))
+        {
+            var reason = current == CityCapability.Unknown && !string.IsNullOrWhiteSpace(unknownReason)
+                ? $" reason='{unknownReason}'"
+                : string.Empty;
+            Notify($"[city] capability={resolved} source={source}{reason}");
+        }
     }
 
     private async Task<AccountAccessState> LoginStateAsync(CancellationToken cancellationToken = default)

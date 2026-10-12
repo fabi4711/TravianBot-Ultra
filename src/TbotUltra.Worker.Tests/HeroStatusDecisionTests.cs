@@ -101,9 +101,9 @@ public sealed class HeroStatusDecisionTests
     }
 
     [Fact]
-    public void ResolveIsInVillage_RunningSignalWinsOverStaleHomeSignal()
+    public void ResolvePresence_RunningSignalWinsOverStaleHomeSignal()
     {
-        Assert.False(HeroStatusDecision.ResolveIsInVillage(
+        Assert.Equal(HeroPresence.Away, HeroStatusDecision.ResolvePresence(
             reinforcing: false,
             running: true,
             home: true,
@@ -113,22 +113,34 @@ public sealed class HeroStatusDecisionTests
     }
 
     [Theory]
-    [InlineData(true, false, false, false)]
-    [InlineData(false, false, true, true)]
-    [InlineData(false, false, false, true)]
-    public void ResolveIsInVillage_UsesStrongSignalsAndKeepsUnknownNonBlocking(
+    [InlineData(true, false, false, 2)]
+    [InlineData(false, false, true, 1)]
+    [InlineData(false, false, false, 0)]
+    public void ResolvePresence_RequiresAnExplicitHomeSignal(
         bool reinforcing,
         bool running,
         bool home,
-        bool expected)
+        int expected)
     {
-        Assert.Equal(expected, HeroStatusDecision.ResolveIsInVillage(
+        Assert.Equal((HeroPresence)expected, HeroStatusDecision.ResolvePresence(
             reinforcing,
             running,
             home,
             legacyStatus: null,
             officialAway: false,
             sidebarText: null));
+    }
+
+    [Fact]
+    public void ResolvePresence_DoesNotGuessHomeFromUnrelatedSidebarText()
+    {
+        Assert.Equal(HeroPresence.Unknown, HeroStatusDecision.ResolvePresence(
+            reinforcing: false,
+            running: false,
+            home: false,
+            legacyStatus: null,
+            officialAway: false,
+            sidebarText: "Hero level 12"));
     }
 
     [Fact]

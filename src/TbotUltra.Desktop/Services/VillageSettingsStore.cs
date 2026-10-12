@@ -16,7 +16,7 @@ namespace TbotUltra.Desktop.Services;
 /// Villages are keyed by their stable village key (the same <c>newdid</c>-based key the UI uses), so
 /// a renamed village keeps its enabled choice instead of reappearing as a new village. New villages default
 /// to enabled, while a user's explicit disabled choice is preserved. Construction
-/// is the only automation group enabled by default. Explicit choices survive refreshes and restarts.
+/// and Hero are the automation groups enabled by default. Explicit choices survive refreshes and restarts.
 /// </summary>
 public sealed partial class VillageSettingsStore
 {
@@ -24,7 +24,7 @@ public sealed partial class VillageSettingsStore
     public const bool DefaultAutomationEnabled = true;
     public const string DefaultEnabledGroupKey = "construction";
 
-    public static IReadOnlyList<string> DefaultEnabledGroups { get; } = new[] { DefaultEnabledGroupKey };
+    public static IReadOnlyList<string> DefaultEnabledGroups { get; } = new[] { DefaultEnabledGroupKey, "hero" };
 
     // Minimal identity descriptor passed in by the UI. Key is precomputed by the caller (GetVillageKey)
     // so the newdid/coords/name key logic stays in one place.
@@ -48,7 +48,7 @@ public sealed partial class VillageSettingsStore
         public bool IsCapital { get; set; }
         public bool IsEnabled { get; set; }
         // Per-village automation-loop group keys that are enabled. Legacy null values are migrated to the
-        // village default (Construction only). An explicit empty list means all groups are disabled.
+        // legacy village default (Construction only). An explicit empty list means all groups are disabled.
         public List<string>? EnabledGroups { get; set; }
         // Whether NPC trade may run in this village. Legacy null values are migrated to disabled. The account-wide NPC
         // master toggle (Auto settings) still gates everything: NPC runs only when master AND this are on.
@@ -186,7 +186,7 @@ public sealed partial class VillageSettingsStore
 
                 if (record.EnabledGroups is null)
                 {
-                    record.EnabledGroups = CreateDefaultEnabledGroups();
+                    record.EnabledGroups = new List<string> { DefaultEnabledGroupKey };
                     migratedAnything = true;
                 }
 

@@ -76,13 +76,15 @@ internal interface IAutoQueueAutomationPassRuntime
     IReadOnlyDictionary<Guid, DateTimeOffset> GetSmartSleepQueueDeadlineOverrides(
         IReadOnlyList<QueueItem> items,
         DateTimeOffset now);
+    void MarkActivePass();
 }
 
 internal sealed class AutoQueueAutomationPassRuntime(
     AutomationPassRuntime pass,
     AutomationQueueSelectionCoordinator queueSelection,
     ContinuousAutomationDeadlineCoordinator deadlines,
-    ContinuousVillageStatusRound villageStatusRound) : IAutoQueueAutomationPassRuntime
+    ContinuousVillageStatusRound villageStatusRound,
+    AutomationSessionRuntime session) : IAutoQueueAutomationPassRuntime
 {
     public long RunLogId => pass.AutoQueueRunLogId;
     public bool PrioritizeDeadlineWorkOnWake
@@ -103,4 +105,5 @@ internal sealed class AutoQueueAutomationPassRuntime(
     public IReadOnlyDictionary<Guid, DateTimeOffset> GetSmartSleepQueueDeadlineOverrides(
         IReadOnlyList<QueueItem> items,
         DateTimeOffset now) => deadlines.ResolveQueueDeadlineOverrides(items, now);
+    public void MarkActivePass() => session.MarkActivePass();
 }

@@ -99,6 +99,119 @@ public sealed class ContinuousAutomationPassTests
     }
 
     [Fact]
+    public async Task LongIdle_ChecksForDorf1OnEveryPassWhenEnabled()
+    {
+        var preparation = new InMemoryContinuousAutomationPassPort
+        {
+            Options = new BotOptions { LoopIntervalSeconds = 60, ParkOnDorf2WhileIdle = true },
+            Deadlines = new ContinuousAutomationDeadlineSnapshot(
+                Now.AddMinutes(5), null, null, [], SmartSleepDeadlinePolicy.AllGroups.ToHashSet()),
+        };
+        var pass = new ContinuousAutomationPass(preparation, new FixedTimeProvider(Now));
+        var context = new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7);
+
+        await pass.ReadAsync(context, CancellationToken.None);
+        await pass.ReadAsync(context, CancellationToken.None);
+
+        Assert.Equal(2, preparation.IdleDorf2ParkingCount);
+        Assert.Equal(Now.AddMinutes(5), preparation.LastParkingNextTaskAtUtc);
+    }
+
+    [Fact]
+    public async Task ShortIdle_ParksOnDorf2WhenEnabled()
+    {
+        var preparation = new InMemoryContinuousAutomationPassPort
+        {
+            Options = new BotOptions { LoopIntervalSeconds = 10, ParkOnDorf2WhileIdle = true },
+            Deadlines = new ContinuousAutomationDeadlineSnapshot(
+                Now.AddSeconds(10), null, null, [], SmartSleepDeadlinePolicy.AllGroups.ToHashSet()),
+        };
+        var pass = new ContinuousAutomationPass(preparation, new FixedTimeProvider(Now));
+
+        await pass.ReadAsync(
+            new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7),
+            CancellationToken.None);
+
+        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+        Assert.True(preparation.Trace.IndexOf("park") > preparation.Trace.IndexOf("idle-break"));
+    }
+
+    [Fact]
+    public async Task ReadyAction_DoesNotParkBeforeSelection()
+    {
+        var item = new QueueItem
+        {
+            TaskName = "hero_manage",
+            Group = QueueGroup.Hero,
+            NextAttemptAt = Now,
+        };
+        var preparation = new InMemoryContinuousAutomationPassPort
+        {
+            Options = new BotOptions { ParkOnDorf2WhileIdle = true },
+            SelectedItems = new Queue<QueueItem?>([item]),
+        };
+        var pass = new ContinuousAutomationPass(preparation, new FixedTimeProvider(Now));
+
+        await pass.ReadAsync(
+            new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7),
+            CancellationToken.None);
+
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
+    }
+
+    [Fact]
+    public async Task CompletedAction_DoesNotParkBeforeNextSelection()
+    {
+        var preparation = new InMemoryContinuousAutomationPassPort
+        {
+            Options = new BotOptions { ParkOnDorf2WhileIdle = true },
+        };
+        var pass = new ContinuousAutomationPass(preparation, new FixedTimeProvider(Now));
+        var context = new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7);
+        var action = AutomationCandidate.FromQueueItem(new QueueItem
+        {
+            TaskName = "hero_manage",
+            Group = QueueGroup.Hero,
+        });
+
+        await pass.CompleteAsync(context, action, AutomationActionOutcome.Completed, CancellationToken.None);
+
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
+    }
+
+    [Fact]
+    public async Task EnablingParkingDuringAction_IsAppliedAtNextIdleBoundary()
+    {
+        var item = new QueueItem
+        {
+            TaskName = "hero_manage",
+            Group = QueueGroup.Hero,
+            NextAttemptAt = Now,
+        };
+        var preparation = new InMemoryContinuousAutomationPassPort
+        {
+            SelectedItems = new Queue<QueueItem?>([item]),
+        };
+        var pass = new ContinuousAutomationPass(preparation, new FixedTimeProvider(Now));
+        var context = new AutomationRunContext("account-1", new Uri("https://ts1.x1.example/"), 7);
+
+        var snapshot = await pass.ReadAsync(context, CancellationToken.None);
+        Assert.Single(snapshot.Candidates);
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
+
+        preparation.Options = new BotOptions { ParkOnDorf2WhileIdle = true };
+        await pass.CompleteAsync(
+            context,
+            snapshot.Candidates.Single(),
+            AutomationActionOutcome.Completed,
+            CancellationToken.None);
+
+        Assert.Equal(0, preparation.IdleDorf2ParkingCount);
+        await pass.ReadAsync(context, CancellationToken.None);
+        Assert.Equal(1, preparation.IdleDorf2ParkingCount);
+    }
+
+    [Fact]
     public async Task DeferredTroopTrainingDeadline_DrivesSmartSleepWhileVillageScanOnlyDrivesOnlineWake()
     {
         var troopDeadline = Now.AddHours(2);
@@ -308,9 +421,10 @@ public sealed class ContinuousAutomationPassTests
         public int RuntimeItemsCount { get; private set; }
         public int ChromiumPreparationCount { get; private set; }
         public int AccountHoldCount { get; private set; }
+        public int IdleDorf2ParkingCount { get; private set; }
         public List<Guid> SmartSleepBlockers { get; } = [];
         public DateTimeOffset? RequestedSmartSleepDeadline { get; private set; }
-        public BotOptions Options { get; init; } = new() { LoopIntervalSeconds = 60 };
+        public BotOptions Options { get; set; } = new() { LoopIntervalSeconds = 60 };
         public bool SmartSleepRequestAccepted { get; init; }
         public List<string> Trace { get; } = [];
         public ContinuousAutomationDeadlineSnapshot Deadlines { get; init; } = new(
@@ -354,7 +468,11 @@ public sealed class ContinuousAutomationPassTests
             return true;
         }
         public bool ConsumeImmediateWorkRequest() => false;
-        public ValueTask MaybeTakeIdleBreakAsync(BotOptions options, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public ValueTask MaybeTakeIdleBreakAsync(BotOptions options, CancellationToken cancellationToken)
+        {
+            Trace.Add("idle-break");
+            return ValueTask.CompletedTask;
+        }
         public ValueTask MaybeDoIdleBrowseAsync(BotOptions options, CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public ValueTask HonorPendingVillageSwitchAsync(BotOptions options, CancellationToken cancellationToken) => ValueTask.CompletedTask;
         public bool ConsumeForceVillageStatusRoundRequest() => false;
@@ -377,9 +495,20 @@ public sealed class ContinuousAutomationPassTests
             Trace.Add("select");
             return SelectedItems.Count == 0 ? null : SelectedItems.Dequeue();
         }
-        public void MarkActivePass() => ActivePassCount++;
+        public void MarkActivePass()
+        {
+            ActivePassCount++;
+        }
         public void LogSmartSleepBlockedByReadyTask(QueueItem item) => SmartSleepBlockers.Add(item.Id);
         public ValueTask MaybeKeepBrowserFreshAsync(BotOptions options, CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        public DateTimeOffset? LastParkingNextTaskAtUtc { get; private set; }
+        public ValueTask MaybeParkOnDorf2Async(BotOptions options, DateTimeOffset? nextTaskAtUtc, CancellationToken cancellationToken)
+        {
+            IdleDorf2ParkingCount++;
+            LastParkingNextTaskAtUtc = nextTaskAtUtc;
+            Trace.Add("park");
+            return ValueTask.CompletedTask;
+        }
         public ContinuousAutomationDeadlineSnapshot ReadDeadlines(BotOptions options) => Deadlines;
         public bool TryRequestSmartSleep(DateTimeOffset? trustedDeadlineUtc)
         {

@@ -38,6 +38,7 @@ public partial class MainWindow : Window
     private const string DashboardVisibleGroupsConfigKey = "dashboard_visible_groups";
     private const int ResourceFieldMaxLevel = 40;
     private const int NonCapitalResourceMaxLevel = 10;
+    private const int CityResourceMaxLevel = 12;
     private const int MaxLogLinesPerFlush = 24;
     private static readonly TimeSpan LogUiFlushBudget = TimeSpan.FromMilliseconds(12);
     private const int MaxSessionLogFiles = 5;
@@ -64,7 +65,8 @@ public partial class MainWindow : Window
         int? CoordX,
         int? CoordY,
         int? Population,
-        int? CropFields);
+        int? CropFields,
+        CityStatus CityStatus = CityStatus.Unknown);
 
     private sealed record UiSyncPayload(
         int? Gold,
@@ -73,7 +75,10 @@ public partial class MainWindow : Window
         int? ActiveVillageCoordX,
         int? ActiveVillageCoordY,
         IReadOnlyList<UiSyncVillagePayload>? Villages,
-        bool VillagesAreAuthoritative = false);
+        bool VillagesAreAuthoritative = false,
+        CityCapability CityCapability = CityCapability.Unknown);
+
+    private CityCapability _cityCapability = CityCapability.Unknown;
 
     private enum ManualExecutionOutcome
     {
@@ -122,6 +127,7 @@ public partial class MainWindow : Window
     private readonly TroopTrainingPanelService _troopTrainingPanelService;
     private readonly QueuePanelService _queuePanelService;
     private readonly DispatcherTimer _clockTimer;
+    private readonly DispatcherTimer _farmingCountdownTimer;
     private bool _isUiPresentationPulse;
     private readonly DispatcherTimer _copyFeedbackTimer;
     private readonly DispatcherTimer _inboxRefreshTimer;
@@ -144,6 +150,7 @@ public partial class MainWindow : Window
     // existing code-behind that mutates the collection in place keeps working.
     private ObservableCollection<LoopTaskOption> _automationLoopTasks => _automationLoopViewModel.Tasks;
     private ICollectionView? _automationLoopTasksView;
+    private IReadOnlyList<string> _continuousLoopGroupOrder = VillageTaskPriorityOrder.DefaultKeys;
     // Resource Transfer villages now live on ResourceTransferViewModel; this
     // delegates so existing code-behind that mutates the collection in place
     // (scan/persist/payload) keeps working unchanged.
@@ -329,8 +336,6 @@ public partial class MainWindow : Window
     private bool _logDragSelecting;
     private int _logDragAnchorIndex = -1;
     private ListBox? _logDragSourceList;
-    private Point _automationLoopDragStart;
-    private LoopTaskOption? _automationLoopDragSource;
     private bool _suppressAutomationLoopConfigWrite;
     private bool _suppressFarmListUiRefresh;
     private bool _suppressFarmingSettingsConfigWrite;
@@ -362,7 +367,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        foreach (var slotId in Enumerable.Range(19, 22))
+        foreach (var slotId in BuildingSlotPolicy.OverviewSlots(CityStatus.Village))
         {
             BuildingSlotLayoutById.TryGetValue(slotId, out var layout);
             var isWallSlot = slotId == 40;
@@ -492,8 +497,10 @@ public partial class MainWindow : Window
         _troopTrainingPanelService = new TroopTrainingPanelService(new DesktopTroopTrainingPanelClient(_botService), _botConfigStore, _projectRoot);
         _queuePanelService = new QueuePanelService(new DesktopQueuePanelClient(_botService));
         _botService.FarmLossDestinationChanged += OnFarmLossDestinationChanged;
+        _botService.FarmListHistoryUpdated += OnFarmListHistoryUpdated;
         _botService.ActiveVillageVerified += OnActiveVillageVerified;
         _botService.ConstructionQueueObserved += OnConstructionQueueObserved;
+        _botService.WatchtowerStatusObserved += OnWatchtowerStatusObserved;
         _botService.TaskActivityRecorded += OnTaskActivityRecorded;
         _travianQueueViewModel.RemoveRequested += QueueRemoveSelected;
         _travianQueueViewModel.RestoreRequested += RestoreRemovedQueueItems;
@@ -521,9 +528,16 @@ public partial class MainWindow : Window
         }
 
         _clockTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        DateTimeOffset? lastUiPulseAtUtc = null;
         _clockTimer.Tick += (_, _) =>
         {
             var uiPulseStopwatch = Stopwatch.StartNew();
+            var pulseAtUtc = DateTimeOffset.UtcNow;
+            if (lastUiPulseAtUtc is { } previousPulseAtUtc)
+            {
+                ReportSlowUiWork("1 Hz UI scheduling delay", pulseAtUtc - previousPulseAtUtc - _clockTimer.Interval);
+            }
+            lastUiPulseAtUtc = pulseAtUtc;
             _isUiPresentationPulse = true;
             try
             {
@@ -535,20 +549,27 @@ public partial class MainWindow : Window
                 UpdateSessionPacingUi();
                 TickPreSleepConstructionFill();
                 HandleBrowserClosedSignal();
-                TickFarmListCountdowns();
                 TickAutomationLoopCountdowns();
-                TickIncomingAttacks(serverNow);
-                TickTroopEvasion(serverNow);
+                MeasureUiWork("attack presentation pulse", () =>
+                {
+                    TickIncomingAttacks(serverNow);
+                    TickTroopEvasion(serverNow);
+                });
 
                 TickBuildQueueCountdown();
-                RefreshDemolishStatusForSelectedVillage();
+                if (IsMainTabSelected(BuildingsTabItem))
+                {
+                    MeasureUiWork("demolition presentation pulse", () =>
+                        RefreshDemolishStatusForSelectedVillage(useUiSnapshot: true));
+                }
 
                 if (dashboardTabSelected)
                 {
                     // Active construction timers belong to the cached Travian snapshot. Reproject them on
                     // the presentation pulse so expired icons disappear immediately while the live refresh
                     // requested by TickBuildQueueCountdown confirms the queue in the browser.
-                    RefreshVillageActivityIndicatorsOnDashboard();
+                    MeasureUiWork("dashboard presentation pulse", () =>
+                        RefreshVillageActivityIndicatorsOnDashboard(refreshQueueRows: _queuePopupWindow?.IsVisible == true));
                 }
 
                 // Only render the cached projection here. Queue/status changes rebuild it through
@@ -560,9 +581,12 @@ public partial class MainWindow : Window
 
                 if (IsMainTabSelected(QueueTabItem))
                 {
-                    UpdateBuildQueueStatusText();
-                    RefreshTravianBuildQueueUi();
-                    RefreshTravianSmithyQueueUi();
+                    MeasureUiWork("queue presentation pulse", () =>
+                    {
+                        UpdateBuildQueueStatusText();
+                        RefreshTravianBuildQueueUi();
+                        RefreshTravianSmithyQueueUi();
+                    });
                 }
 
                 if (IsMainTabSelected(ResourcesTabItem))
@@ -588,6 +612,35 @@ public partial class MainWindow : Window
             }
         };
         _clockTimer.Start();
+
+        _farmingCountdownTimer = new DispatcherTimer(DispatcherPriority.Render)
+        {
+            Interval = TimeSpan.FromSeconds(1),
+        };
+        _farmingCountdownTimer.Tick += (_, _) =>
+        {
+            if (!FarmingPanelControl.IsVisible)
+            {
+                return;
+            }
+
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                TickFarmListCountdowns();
+                UpdateNextFarmListSendDisplay();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Farming countdown tick failed: {ex}");
+            }
+            finally
+            {
+                stopwatch.Stop();
+                ReportSlowUiWork("Farming 1 Hz UI pulse", stopwatch.Elapsed);
+            }
+        };
+        _farmingCountdownTimer.Start();
 
         _copyFeedbackTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.8) };
         _copyFeedbackTimer.Tick += (_, _) =>
@@ -663,8 +716,10 @@ public partial class MainWindow : Window
         _farmListsViewModel.CreateFarmListRequested += () => _ = GuardUiAsync(CreateFarmListButtonClickAsync);
         _farmListsViewModel.SendAllNowRequested += () => _ = GuardUiAsync(FarmListSendAllNowButtonClickAsync);
         _farmListsViewModel.SendNowRequested += list => _ = GuardUiAsync(() => FarmListSendNowButtonClickAsync(list));
-        _farmListsViewModel.IntervalsReset += (count, min, max) =>
-            AppendLog($"[farm-list] reset {count} individual interval(s) to the {min}-{max} minute default.");
+        _farmListsViewModel.ResetTimersRequested += ResetFarmListTimers;
+        _farmListsViewModel.ResetVillageIntervalsRequested += ResetVillageFarmListIntervals;
+        FarmingPanelControl.HistoryRequested += () => _ = RefreshFarmListHistoryAsync();
+        FarmingPanelControl.ClearHistoryRequested += ClearFarmListHistory;
         _farmListsViewModel.SettingsChanged += PersistFarmingSettings;
         _farmListsViewModel.MoveRedLossesEnabledRequested += () => _ = GuardUiAsync(() => EnsureFarmLossDestinationSelectedAsync(FarmListLossColors.Red));
         _farmListsViewModel.MoveYellowLossesEnabledRequested += () => _ = GuardUiAsync(() => EnsureFarmLossDestinationSelectedAsync(FarmListLossColors.Yellow));
@@ -686,6 +741,7 @@ public partial class MainWindow : Window
         _buildingsViewModel.DemolishOverviewRequested += OnDemolishOverviewClicked;
         _buildingsViewModel.StopDemolitionRequested += OnStopDemolitionClicked;
         _buildingsViewModel.SlotSelected += HandleBuildingSlotSelection;
+        _buildingsViewModel.QuickUpgradeRequested += row => QueueSingleBuildingUpgradeFromSlot(row.SlotId);
         _resourcesViewModel.LoadRequested += () => _ = GuardUiAsync(LoadResourcesButtonClickAsync);
         _resourcesViewModel.UpgradeAllRequested += UpgradeAllResources;
         _resourcesViewModel.UpgradeAllToMaxRequested += UpgradeAllResourcesToMax;
@@ -695,6 +751,7 @@ public partial class MainWindow : Window
         _heroViewModel.RefreshHpRequested += () => _ = RunHeroPanelOperationAsync(RefreshHeroHpCoreAsync);
         _heroViewModel.RefreshStatsRequested += () => _ = RunHeroPanelOperationAsync(RefreshHeroStatsCoreAsync);
         _heroViewModel.RefreshInventoryRequested += () => _ = RunHeroPanelOperationAsync(RefreshHeroInventoryCoreAsync);
+        _heroViewModel.AttributePriorityChanged += PersistHeroPriorityToConfig;
         SubscribeToHeroInventoryUpdates();
         InitializeBuildingSlotPlaceholders();
         _farmLists.CollectionChanged += (_, _) =>
@@ -1666,6 +1723,17 @@ public partial class MainWindow : Window
             ActiveVillage = status.ActiveVillage,
             Villages = status.Villages.Count > 0 ? status.Villages : _lastBuildingStatus.Villages,
             Buildings = status.Buildings,
+            ActiveConstructions = status.ActiveConstructionsFromOverview
+                ? status.ActiveConstructions
+                : _lastBuildingStatus.ActiveConstructions,
+            ActiveConstructionsFromOverview = status.ActiveConstructionsFromOverview
+                || _lastBuildingStatus.ActiveConstructionsFromOverview,
+            ActiveBuildCount = status.ActiveConstructionsFromOverview
+                ? status.ActiveBuildCount
+                : _lastBuildingStatus.ActiveBuildCount,
+            IsBuildingInProgress = status.ActiveConstructionsFromOverview
+                ? status.IsBuildingInProgress
+                : _lastBuildingStatus.IsBuildingInProgress,
             Tribe = string.IsNullOrWhiteSpace(status.Tribe) || string.Equals(status.Tribe, "Unknown", StringComparison.OrdinalIgnoreCase)
                 ? _lastBuildingStatus.Tribe
                 : status.Tribe,
@@ -1674,6 +1742,13 @@ public partial class MainWindow : Window
             ServerTimeUtc = status.ServerTimeUtc ?? _lastBuildingStatus.ServerTimeUtc,
             ActiveVillageCoordX = status.ActiveVillageCoordX,
             ActiveVillageCoordY = status.ActiveVillageCoordY,
+            CityCapability = status.CityCapability != CityCapability.Unknown
+                ? status.CityCapability
+                : _lastBuildingStatus.CityCapability,
+            CityStatus = status.CityStatus != CityStatus.Unknown
+                ? status.CityStatus
+                : _lastBuildingStatus.CityStatus,
+            WatchtowerStatus = status.WatchtowerStatus ?? _lastBuildingStatus.WatchtowerStatus,
         };
     }
 

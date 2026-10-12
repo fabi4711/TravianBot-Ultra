@@ -68,11 +68,10 @@ public sealed partial class TravianClient
             {
                 if (!skipNavigationIfOnExpectedSlot || !TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
                 {
-                    await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken);
+                    await OpenSlotFromOverviewAsync(slotId, cancellationToken);
                 }
                 await EnsureLoggedInAsync();
                 await EnsureExpectedBuildSlotPageAsync(slotId, "analyze upgrade", cancellationToken);
-                await DelayBeforeClickAsync(cancellationToken); // Action pacing "Click" delay
 
                 var rawJson = await _page.EvaluateAsync<string>(
                     """

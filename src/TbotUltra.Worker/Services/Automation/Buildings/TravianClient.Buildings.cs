@@ -15,13 +15,21 @@ namespace TbotUltra.Worker.Services;
 public sealed partial class TravianClient : IBuildingClient
 {
 
-    public async Task<VillageStatus> ReadBuildingsStatusAsync(CancellationToken cancellationToken = default)
+    public Task<VillageStatus> ReadBuildingsStatusAsync(CancellationToken cancellationToken = default)
+        => ReadBuildingsStatusAsync(refreshWatchtowerStatus: false, cancellationToken);
+
+    internal async Task<VillageStatus> ReadBuildingsStatusAsync(
+        bool refreshWatchtowerStatus,
+        CancellationToken cancellationToken = default)
     {
         Notify("[build:verbose] ReadBuildingsStatusAsync started");
         var buildings = await ReadBuildingsAsync(cancellationToken);
         var activeVillage = await ReadActiveVillageNameAsync(cancellationToken);
         var tribe = await ReadActiveVillageTribeAsync(cancellationToken);
         var activeCoords = await TryReadActiveVillageCoordsFromCurrentPageAsync(cancellationToken);
+        var watchtowerStatus = _lastBuildingOverviewCityStatus == CityStatus.City
+            ? await ReadWatchtowerStatusAsync(refreshWatchtowerStatus, cancellationToken)
+            : null;
 
         return new VillageStatus(
             ActiveVillage: activeVillage,
@@ -35,20 +43,40 @@ public sealed partial class TravianClient : IBuildingClient
             IsCapital: TryGetCachedCapitalState(activeVillage, activeCoords.X, activeCoords.Y),
             ServerTimeUtc: _serverTimeUtc,
             ActiveVillageCoordX: activeCoords.X,
-            ActiveVillageCoordY: activeCoords.Y);
+            ActiveVillageCoordY: activeCoords.Y,
+            CityCapability: KnownCityCapability,
+            CityStatus: _lastBuildingOverviewCityStatus,
+            WatchtowerStatus: watchtowerStatus);
     }
 
-    public async Task<VillageStatus> ReadCurrentBuildingOverviewStatusAsync(CancellationToken cancellationToken = default)
+    public Task<VillageStatus> ReadCurrentBuildingOverviewStatusAsync(CancellationToken cancellationToken = default)
+        => ReadBuildingOverviewStatusAsync(requireCurrentPage: true, cancellationToken);
+
+    public Task<VillageStatus> ReadBuildingOverviewStatusAsync(CancellationToken cancellationToken = default)
+        => ReadBuildingOverviewStatusAsync(requireCurrentPage: false, cancellationToken);
+
+    private async Task<VillageStatus> ReadBuildingOverviewStatusAsync(
+        bool requireCurrentPage,
+        CancellationToken cancellationToken)
     {
-        Notify("[build:verbose] ReadCurrentBuildingOverviewStatusAsync started");
-        if (!IsCurrentUrlForPath(Paths.Buildings) || await IsPageMarkedStaleAsync())
+        Notify($"[build:verbose] building overview status started currentOnly={requireCurrentPage}");
+        if (requireCurrentPage && (!IsCurrentUrlForPath(Paths.Buildings) || await IsPageMarkedStaleAsync()))
         {
             throw new InvalidOperationException("The current page is not a fresh Dorf2 building overview.");
         }
 
         var buildings = await ReadBuildingsAsync(cancellationToken, reuseFreshCurrentOverview: true);
         var currentStatus = await ReadCurrentPageStorageStatusAsync(cancellationToken);
-        return currentStatus with { Buildings = buildings };
+        return currentStatus with
+        {
+            Buildings = buildings,
+            CityCapability = KnownCityCapability,
+            CityStatus = _lastBuildingOverviewCityStatus,
+            WatchtowerStatus = TryGetCachedWatchtowerStatus(
+                currentStatus.ActiveVillage,
+                currentStatus.ActiveVillageCoordX,
+                currentStatus.ActiveVillageCoordY),
+        };
     }
 
     internal static IReadOnlyList<Building> ParseBuildingOverviewHtmlForTests(string html)

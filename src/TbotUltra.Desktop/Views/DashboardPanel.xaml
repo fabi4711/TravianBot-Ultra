@@ -56,7 +56,7 @@
                                                    Text="Runs the enabled task groups in the order shown. The loop checks the queue, runs ready tasks, and waits between passes while still reacting quickly to stop or pause." />
                                         <TextBlock Margin="0,6,0,0"
                                                    TextWrapping="Wrap"
-                                                   Text="Drag items to change order. Use each switch to enable or disable a task group." />
+                                                   Text="Change task priority in Settings > General. Use each switch to enable or disable a task group." />
                                     </StackPanel>
                                 </ToolTip>
                             </Border.ToolTip>
@@ -92,11 +92,7 @@
                          SelectionMode="Single"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
-                         AllowDrop="True"
-                         PreviewMouseLeftButtonDown="AutomationLoopListBox_PreviewMouseLeftButtonDown"
-                         PreviewMouseMove="AutomationLoopListBox_PreviewMouseMove"
-                         DragOver="AutomationLoopListBox_DragOver"
-                         Drop="AutomationLoopListBox_Drop">
+                         AllowDrop="False">
                     <ListBox.ItemsPanel>
                         <ItemsPanelTemplate>
                             <StackPanel Orientation="Vertical" />
@@ -109,6 +105,18 @@
                             <Setter Property="Margin" Value="0,0,6,6" />
                             <Setter Property="BorderThickness" Value="0" />
                             <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border Background="{TemplateBinding Background}"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsVisible}" Value="False">
                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -532,7 +540,7 @@
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <TextBlock Text="{Binding Name}" FontSize="13" TextTrimming="CharacterEllipsis">
+                                            <TextBlock Text="{Binding VillageOverviewName}" FontSize="13" TextTrimming="CharacterEllipsis">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />

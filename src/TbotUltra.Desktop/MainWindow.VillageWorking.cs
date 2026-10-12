@@ -388,7 +388,9 @@ public partial class MainWindow
                 ActiveUpgrades: activeUpgrades);
             var preserved = SmithyQueueState.PreserveKnownActiveQueue(incoming, existing, DateTimeOffset.UtcNow);
             StoreVillageStatusCacheEntry(name, cached with { SmithyUpgradeStatus = preserved });
-            _villageCacheStore.Save(_villageStatusCache.Snapshot);
+            _villageCacheWriter.Request(new VillageCacheWrite(
+                _accountStore.ActiveAccountName(),
+                _villageStatusCache.Snapshot));
 
             var selectedKey = GetSelectedVillageKey();
             if (selectedKey is null
@@ -426,15 +428,21 @@ public partial class MainWindow
             : $"{span.Minutes}:{span.Seconds:00}";
     }
 
-    private void RefreshVillageActivityIndicatorsOnDashboard()
+    private void RefreshVillageActivityIndicatorsOnDashboard() =>
+        RefreshVillageActivityIndicatorsOnDashboard(refreshQueueRows: true);
+
+    private void RefreshVillageActivityIndicatorsOnDashboard(bool refreshQueueRows)
     {
         if (DashboardVillageList.ItemsSource is IEnumerable<VillageSelectionItem> items)
         {
             ApplyVillageActivityIndicators(items.ToList());
         }
 
-        RefreshTravianBuildQueueUi();
-        RefreshTravianSmithyQueueUi();
+        if (refreshQueueRows)
+        {
+            RefreshTravianBuildQueueUi();
+            RefreshTravianSmithyQueueUi();
+        }
     }
 
     private bool _dashboardVillageProjectionPending;
@@ -780,7 +788,8 @@ public partial class MainWindow
         VillageStatus status,
         string? villageNameOverride = null,
         bool triggerDeferredWaitRefresh = true,
-        bool readOnlyObservation = false)
+        bool readOnlyObservation = false,
+        ConstructionStatusObservationOrigin observationOrigin = ConstructionStatusObservationOrigin.Independent)
     {
         var name = NormalizeVillageName(villageNameOverride) ?? NormalizeVillageName(status.ActiveVillage);
         if (name is null)
@@ -839,6 +848,7 @@ public partial class MainWindow
                         existing.TroopTrainingQueues,
                         now),
                 SmithyUpgradeStatus = status.SmithyUpgradeStatus ?? existing.SmithyUpgradeStatus,
+                WatchtowerStatus = status.WatchtowerStatus ?? existing.WatchtowerStatus,
                 BreweryCelebrationStatus = status.BreweryCelebrationStatus ?? existing.BreweryCelebrationStatus,
                 FarmLists = status.FarmLists ?? existing.FarmLists,
                 HeroStatus = status.HeroStatus ?? existing.HeroStatus,
@@ -854,8 +864,8 @@ public partial class MainWindow
                 status = status with { Buildings = existing.Buildings };
             }
 
-            if (!HasCompleteResourceFieldSnapshot(status.ResourceFields)
-                && HasCompleteResourceFieldSnapshot(existing.ResourceFields))
+            if (!VillageStatusCompleteness.HasCompleteResourceFieldSnapshot(status.ResourceFields)
+                && VillageStatusCompleteness.HasCompleteResourceFieldSnapshot(existing.ResourceFields))
             {
                 status = status with { ResourceFields = existing.ResourceFields };
             }
@@ -884,12 +894,14 @@ public partial class MainWindow
                 "empty-queue",
                 name,
                 statusKey,
-                releaseResourceHeadForConfirmedEmptyQueue: true);
+                releaseResourceHeadForConfirmedEmptyQueue: true,
+                observationOrigin: observationOrigin);
         }
 
         // Prepare the immediate-fill override before the async refresh reads deferred rows. Otherwise the
         // refresh can capture the old queue-full deadline and restore it after the empty-queue path released it.
-        if (triggerDeferredWaitRefresh)
+        if (triggerDeferredWaitRefresh
+            && ConstructionQueueState.CanRefreshDeferredWaits(observationOrigin))
         {
             TriggerDeferredConstructionWaitRefresh(liveStatus, "village_status");
         }
@@ -975,7 +987,9 @@ public partial class MainWindow
         }
 
         StoreVillageStatusCacheEntry(name, updated);
-        _villageCacheStore.Save(_villageStatusCache.Snapshot);
+        _villageCacheWriter.Request(new VillageCacheWrite(
+            _accountStore.ActiveAccountName(),
+            _villageStatusCache.Snapshot));
     }
 
     // Timer/status updates produced by a live village read must keep that read's coordinate owner.
@@ -1011,7 +1025,9 @@ public partial class MainWindow
         }
 
         StoreVillageStatusCacheEntry(name, updated);
-        _villageCacheStore.Save(_villageStatusCache.Snapshot);
+        _villageCacheWriter.Request(new VillageCacheWrite(
+            _accountStore.ActiveAccountName(),
+            _villageStatusCache.Snapshot));
     }
 
     private void StoreVillageStatusCacheEntry(string name, VillageStatus status)
@@ -1032,7 +1048,9 @@ public partial class MainWindow
             return;
         }
 
-        _lastBuildingStatus = status;
+        _lastBuildingStatus = _villageStatusCache.TryGetByKey(cachedStatusKey, out var storedStatus)
+            ? storedStatus
+            : status;
         AppendLog($"[village-cache:verbose] synchronized preferred snapshot for key='{cachedStatusKey}'.");
     }
 
@@ -1257,6 +1275,66 @@ public partial class MainWindow
         });
     }
 
+    private void OnWatchtowerStatusObserved(WatchtowerStatusObservation observation)
+    {
+        if (!string.Equals(observation.AccountName, _accountStore.ActiveAccountName(), StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        RunOrPostToUi(() =>
+        {
+            if (!string.Equals(observation.AccountName, _accountStore.ActiveAccountName(), StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            var name = NormalizeVillageName(observation.VillageName);
+            var villageKey = observation.CoordX.HasValue && observation.CoordY.HasValue
+                ? VillageKey.FromCoords(observation.CoordX.Value, observation.CoordY.Value)
+                : ResolveVillageKeyByName(name);
+            if (name is null || (villageKey is null && IsVillageNameAmbiguous(name)))
+            {
+                AppendLog($"[watchtower-ui] skipped status update for ambiguous village '{observation.VillageName}'.");
+                return;
+            }
+
+            VillageStatus? existing = null;
+            var found = villageKey is not null
+                ? _villageStatusCache.TryGetByKey(villageKey, out existing)
+                : _villageStatusCache.TryGetByName(name, out existing);
+            var status = found && existing is not null
+                ? existing with
+                {
+                    WatchtowerStatus = observation.Status,
+                    CityCapability = CityCapability.Enabled,
+                    CityStatus = CityStatus.City,
+                    ActiveVillageCoordX = observation.CoordX ?? existing.ActiveVillageCoordX,
+                    ActiveVillageCoordY = observation.CoordY ?? existing.ActiveVillageCoordY,
+                }
+                : new VillageStatus(
+                    ActiveVillage: name,
+                    Villages: [],
+                    Resources: new Dictionary<string, string>(),
+                    ResourceFields: [],
+                    Buildings: [],
+                    BuildQueue: [],
+                    ActiveVillageCoordX: observation.CoordX,
+                    ActiveVillageCoordY: observation.CoordY,
+                    CityCapability: CityCapability.Enabled,
+                    CityStatus: CityStatus.City,
+                    WatchtowerStatus: observation.Status);
+
+            StoreVillageStatusCacheEntry(name, status);
+            _villageCacheWriter.Request(new VillageCacheWrite(
+                _accountStore.ActiveAccountName(),
+                _villageStatusCache.Snapshot));
+            RefreshTravianBuildQueueUi();
+            AppendLog($"[watchtower-ui] applied village='{name}' level={observation.Status.Level} " +
+                $"active={observation.Status.Active.Count}/2 to Queue view.");
+        });
+    }
+
     private string? ResolveVillageKeyByName(string? villageName)
     {
         if (string.IsNullOrWhiteSpace(villageName))
@@ -1380,7 +1458,6 @@ public partial class MainWindow
         _buildingsViewModel.ClearQueuedItemState();
 
         LoadResourceUpgradeTypesForSelectedVillage(selected);
-        ApplySelectedVillageTribeFromCache(selected);
         var hasCachedStatus = TryGetCachedVillageStatus(selected, out var cached);
         if (hasCachedStatus)
         {
@@ -1400,11 +1477,6 @@ public partial class MainWindow
                 _troopTrainingViewModel.ApplyBreweryCelebrationStatus(cached.BreweryCelebrationStatus);
             }
 
-            if (cached.FarmLists is { Count: > 0 })
-            {
-                _ = ApplyCachedFarmListsToUiAsync(cached.FarmLists);
-            }
-
             BuildingsInfoTextBlock.Text = _buildingsViewModel.DescribeLoadedSlots($"selected village '{selected.Name}'");
         }
         else
@@ -1422,6 +1494,7 @@ public partial class MainWindow
         ApplyAutomationLoopGroupsForSelectedVillage();
         // Load this village's troop-training override into the Troops tab so it tracks the selection.
         ApplyTroopTrainingForSelectedVillage();
+        ApplySelectedVillageTribeFromCache(selected);
         ApplyConstructionTimerFromStatus(hasCachedStatus ? cached : null);
         // Light up Switch village when the selected village differs from the one the bot works in.
         UpdateSwitchVillageButtonHighlight();

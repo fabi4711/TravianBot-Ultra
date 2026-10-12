@@ -148,7 +148,21 @@ public static class BuildingCatalogService
             return null;
         }
 
-        return NameToGid.Value.TryGetValue(name.Trim(), out var gid) ? gid : null;
+        var normalized = name.Trim();
+        if (NameToGid.Value.TryGetValue(normalized, out var gid))
+        {
+            return gid;
+        }
+
+        // Older Dorf2 snapshots could persist Travian's raw CSS building code (for example "g45")
+        // before the localized display name had been resolved. Accept it only when the embedded
+        // catalog contains that gid, so arbitrary gNN values never become valid buildings.
+        return normalized.Length > 1
+            && (normalized[0] is 'g' or 'G')
+            && int.TryParse(normalized.AsSpan(1), out var rawGid)
+            && CatalogData.ContainsKey(rawGid)
+                ? rawGid
+                : null;
     }
 
     public static bool CanConstructInVillage(int gid, bool? isCapital, out string reason)
@@ -165,6 +179,44 @@ public static class BuildingCatalogService
             return false;
         }
 
+        reason = string.Empty;
+        return true;
+    }
+
+    public static bool CanConstructInVillage(
+        int gid,
+        bool? isCapital,
+        string? tribe,
+        CityCapability cityCapability,
+        CityStatus cityStatus,
+        out string reason)
+    {
+        if (!CanConstructInVillage(gid, isCapital, out reason))
+        {
+            return false;
+        }
+
+        if (gid != 45)
+        {
+            return true;
+        }
+
+        if (!string.Equals(NormalizeTribe(tribe ?? string.Empty), "Egyptians", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "Waterworks can only be built by Egyptians.";
+            return false;
+        }
+
+        if (cityCapability == CityCapability.Enabled && cityStatus != CityStatus.City)
+        {
+            reason = cityStatus == CityStatus.Unknown
+                ? "Waterworks requires a confirmed City on this Cities server; load buildings to verify the village."
+                : "Waterworks can only be built in a City on this Cities server.";
+            return false;
+        }
+
+        // Unknown capability deliberately does not pre-block Waterworks. The live Travian build page
+        // remains authoritative when the server feature flag could not be read.
         reason = string.Empty;
         return true;
     }

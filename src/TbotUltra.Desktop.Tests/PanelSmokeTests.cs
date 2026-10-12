@@ -135,6 +135,44 @@ public sealed class PanelSmokeTests
     }
 
     [Fact]
+    public void QueuePanel_HighlightsWatchtowerRowsSeparately()
+    {
+        _wpf.Run(() =>
+        {
+            var panel = new QueuePanel();
+            var grid = Assert.IsType<DataGrid>(panel.FindName("TravianBuildQueueDataGrid"));
+            grid.ItemsSource = new ObservableCollection<TravianBuildQueueRow>
+            {
+                new() { Name = "Ready" },
+                new() { Name = "Ready" },
+                new() { Name = "Watchtowers", LevelText = "Level 19", IsWatchtower = true },
+                new() { Name = "Watchtowers", LevelText = "Level 20", IsWatchtower = true },
+            };
+            panel.Measure(new Size(1280, 900));
+            panel.Arrange(new Rect(0, 0, 1280, 900));
+            panel.UpdateLayout();
+
+            var watchtower = Assert.IsType<DataGridRow>(grid.ItemContainerGenerator.ContainerFromIndex(3));
+            var purple = Assert.IsType<SolidColorBrush>(Application.Current.FindResource("PurpleBgBrush"));
+            Assert.True(grid.ActualHeight > 120);
+            var cells = FindVisualChildren<DataGridCell>(watchtower).ToList();
+            Assert.Equal(4, cells.Count);
+            Assert.All(cells, cell => Assert.Equal(purple.Color, Assert.IsType<SolidColorBrush>(cell.Background).Color));
+        });
+    }
+
+    [Theory]
+    [InlineData(CityStatus.City, "ROMA (city)")]
+    [InlineData(CityStatus.Village, "ROMA")]
+    [InlineData(CityStatus.Unknown, "ROMA")]
+    public void VillageOverviewName_MarksOnlyConfirmedCities(CityStatus cityStatus, string expected)
+    {
+        var village = new VillageSelectionItem { Name = "ROMA", CityStatus = cityStatus };
+
+        Assert.Equal(expected, village.VillageOverviewName);
+    }
+
+    [Fact]
     public void DashboardPanel_QueueShortcutExistsForFullAndEmptyVillageQueues()
     {
         _wpf.Run(() =>
@@ -186,13 +224,13 @@ public sealed class PanelSmokeTests
             var travcoHost = Assert.IsType<ContentControl>(panel.FindName("TravcoToolsHost"));
             var sharedSchedule = Assert.IsType<RadioButton>(panel.FindName("FarmSendSharedScheduleRadioButton"));
             var individualSchedule = Assert.IsType<RadioButton>(panel.FindName("FarmSendListPerListRadioButton"));
-            Assert.IsType<Button>(panel.FindName("FarmListIntervalsResetButton"));
+            Assert.IsType<Button>(panel.FindName("FarmListTimersResetButton"));
 
             Assert.Equal(0, Grid.GetColumn(Assert.IsType<Border>(sharedSchedule.Parent)));
             Assert.Equal(1, Grid.GetColumn(Assert.IsType<Border>(individualSchedule.Parent)));
 
             Assert.Equal(
-                new[] { "Farming", "Inactive / oasis scan" },
+                new[] { "Farming", "Farming History", "Inactive / oasis scan" },
                 tabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString() ?? string.Empty).ToArray());
             Assert.Null(travcoHost.Content);
             Assert.Null(panel.FindName("TravcoInactiveSearchButton"));
@@ -534,6 +572,31 @@ public sealed class PanelSmokeTests
                 "40",
                 Assert.Single(editors, editor =>
                     editor.DataContext is HeroAttributePriorityItem { Key: "resources" }).Text);
+        });
+    }
+
+    [Fact]
+    public void HeroPanel_ShowsPriorityArrowsInTheLeftAttributeColumn()
+    {
+        _wpf.Run(() =>
+        {
+            var vm = new HeroViewModel();
+            vm.LoadPriorityFromConfig(null);
+            var panel = new HeroPanel { DataContext = vm };
+
+            panel.Measure(new Size(1000, 700));
+            panel.Arrange(new Rect(0, 0, 1000, 700));
+            panel.UpdateLayout();
+
+            var arrows = FindVisualChildren<Button>(panel)
+                .Where(button => button.DataContext is HeroAttributePriorityItem
+                    && button.Content is "↑" or "↓")
+                .ToList();
+            Assert.Equal(8, arrows.Count);
+            Assert.All(arrows, arrow => Assert.Equal(0, Grid.GetColumn(arrow)));
+            Assert.DoesNotContain(
+                FindVisualChildren<TextBlock>(panel),
+                text => string.Equals(text.Text, "Drag to reorder", StringComparison.Ordinal));
         });
     }
 

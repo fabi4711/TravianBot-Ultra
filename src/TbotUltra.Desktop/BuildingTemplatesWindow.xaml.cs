@@ -49,12 +49,15 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
     private readonly Dictionary<Guid, string> _dismissedStoragePrompts = [];
     private readonly HashSet<BuildingTemplateRowView> _pendingStorageCheckRows = [];
     private bool _isApplyingStoragePrerequisites;
+    private string? _savedTemplateSnapshot;
+    private bool _hasUnsavedChanges;
+    private readonly HashSet<BuildingTemplate> _observedTemplates = [];
 
     public ObservableCollection<BuildingTemplate> Templates { get; } = [];
     public ObservableCollection<BuildingTemplateRowView> Rows { get; } = [];
     public ObservableCollection<BuildingTemplateTargetOption> BuildingOptions { get; } = [];
     public ObservableCollection<BuildingTemplateTargetOption> ResourceOptions { get; } = [];
-    public IReadOnlyList<string> RowKinds { get; } = ["Building", "Add resources"];
+    public IReadOnlyList<string> RowKinds { get; } = ["Building", "Add resources", "Watchtowers"];
     public IReadOnlyList<string> LevelOptions { get; } =
         Enumerable.Range(1, 20).Select(item => item.ToString()).ToList();
 
@@ -76,12 +79,12 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
             if (_selectedTemplate is not null)
             {
                 _selectedTemplate.Rows = BuildTemplateRowsFromUi().ToList();
-                _selectedTemplate.UpdatedAtUtc = DateTimeOffset.UtcNow;
             }
 
             _selectedTemplate = value;
             OnPropertyChanged();
             LoadRowsFromSelectedTemplate();
+            UpdateHasUnsavedChanges();
         }
     }
 
@@ -139,6 +142,12 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
         private set => SetProperty(ref _validationSummaryText, value);
     }
 
+    public bool HasUnsavedChanges
+    {
+        get => _hasUnsavedChanges;
+        private set => SetProperty(ref _hasUnsavedChanges, value);
+    }
+
     public BuildingTemplatesWindow(
         string projectRoot,
         VillageStatus status,
@@ -160,6 +169,7 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
         _storageUpgradeLevelsAhead = storageUpgradeLevelsAhead;
 
         Rows.CollectionChanged += Rows_CollectionChanged;
+        Templates.CollectionChanged += Templates_CollectionChanged;
         _planPreviewTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromMilliseconds(120),
@@ -248,13 +258,15 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
             var createdDefaultTemplate = Templates.Count == 0;
             if (createdDefaultTemplate)
             {
+                _savedTemplateSnapshot = CaptureTemplateSnapshot();
                 Templates.Add(CreateNewTemplate("New template"));
             }
 
             SelectedTemplate = Templates[0];
-            if (createdDefaultTemplate)
+            if (!createdDefaultTemplate)
             {
-                SaveAllTemplates(skipValidation: true);
+                _savedTemplateSnapshot = CaptureTemplateSnapshot();
+                UpdateHasUnsavedChanges();
             }
             _planPreviewTimer.Stop();
             RefreshPlanPreview();
@@ -281,6 +293,37 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
     {
         _planPreviewTimer.Stop();
         _templateLoadCts?.Cancel();
+        foreach (var template in _observedTemplates)
+        {
+            template.PropertyChanged -= Template_PropertyChanged;
+        }
+    }
+
+    private void Templates_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        foreach (var template in _observedTemplates.Where(template => !Templates.Contains(template)).ToList())
+        {
+            template.PropertyChanged -= Template_PropertyChanged;
+            _observedTemplates.Remove(template);
+        }
+
+        foreach (var template in Templates)
+        {
+            if (_observedTemplates.Add(template))
+            {
+                template.PropertyChanged += Template_PropertyChanged;
+            }
+        }
+
+        UpdateHasUnsavedChanges();
+    }
+
+    private void Template_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(BuildingTemplate.Name))
+        {
+            UpdateHasUnsavedChanges();
+        }
     }
 
     private BuildingTemplate CreateNewTemplate(string name)
@@ -331,6 +374,7 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
 
         RefreshIndexes();
         RequestPlanPreviewRefresh();
+        UpdateHasUnsavedChanges();
     }
 
     private void Rows_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -362,6 +406,7 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
 
         RefreshIndexes();
         RequestPlanPreviewRefresh();
+        UpdateHasUnsavedChanges();
     }
 
     private void AddRowView(BuildingTemplateRowView row)
@@ -382,6 +427,15 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
             && e.PropertyName is nameof(BuildingTemplateRowView.Target) or nameof(BuildingTemplateRowView.TargetLevel))
         {
             _pendingStorageCheckRows.Add(row);
+        }
+
+        if (e.PropertyName is nameof(BuildingTemplateRowView.Kind)
+            or nameof(BuildingTemplateRowView.Target)
+            or nameof(BuildingTemplateRowView.SlotText)
+            or nameof(BuildingTemplateRowView.TargetLevel)
+            or nameof(BuildingTemplateRowView.ResourceStrategy))
+        {
+            UpdateHasUnsavedChanges();
         }
 
         RequestPlanPreviewRefresh();
@@ -484,9 +538,7 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
         var template = CreateNewTemplate($"Template {index}");
         Templates.Add(template);
         SelectedTemplate = template;
-        StatusText = SaveAllTemplates(skipValidation: true)
-            ? "Created and saved template."
-            : StatusText;
+        StatusText = "Created template. Click Save to keep it.";
     }
 
     private void DuplicateTemplateButton_Click(object sender, RoutedEventArgs e)
@@ -503,18 +555,11 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
         var sourceIndex = Templates.IndexOf(SelectedTemplate);
         Templates.Insert(sourceIndex + 1, duplicate);
         SelectedTemplate = duplicate;
-        StatusText = SaveAllTemplates(skipValidation: true)
-            ? "Duplicated and saved template."
-            : StatusText;
+        StatusText = "Duplicated template. Click Save to keep it.";
     }
 
     private void ImportTemplatesButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!SaveAllTemplates(skipValidation: true))
-        {
-            return;
-        }
-
         var dialog = new OpenFileDialog
         {
             Title = "Import building templates",
@@ -542,8 +587,12 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
                 return;
             }
 
+            if (SelectedTemplate is not null)
+            {
+                SelectedTemplate.Rows = BuildTemplateRowsFromUi().ToList();
+            }
+
             var result = _exchangeService.ApplyImport(Templates.ToList(), preview.Selections, DateTimeOffset.UtcNow);
-            _store.Save(result.Templates);
 
             SelectedTemplate = null;
             Templates.Clear();
@@ -555,7 +604,8 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
             SelectedTemplate = result.ImportedTemplateIds.Count > 0
                 ? Templates.FirstOrDefault(template => template.Id == result.ImportedTemplateIds[0])
                 : Templates.FirstOrDefault();
-            StatusText = $"Imported {result.ImportedCount}, overwritten {result.OverwrittenCount}, copied {result.CopiedCount}.";
+            UpdateHasUnsavedChanges();
+            StatusText = $"Imported {result.ImportedCount}, overwritten {result.OverwrittenCount}, copied {result.CopiedCount}. Click Save to keep changes.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -596,9 +646,9 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
 
     private void ExportTemplates(IReadOnlyList<BuildingTemplate> templates, string suggestedName)
     {
-        if (!SaveAllTemplates(skipValidation: true))
+        if (SelectedTemplate is not null)
         {
-            return;
+            SelectedTemplate.Rows = BuildTemplateRowsFromUi().ToList();
         }
 
         if (templates.Count == 0)
@@ -709,8 +759,7 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
         }
 
         SelectedTemplate = Templates[Math.Clamp(index, 0, Templates.Count - 1)];
-        SaveAllTemplates(skipValidation: true);
-        StatusText = "Deleted template.";
+        StatusText = "Deleted template. Click Save to keep changes.";
     }
 
     private void AddBuildingRowButton_Click(object sender, RoutedEventArgs e)
@@ -931,7 +980,8 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
 
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!TryPrepareTemplateForSave()
+        if (!HasUnsavedChanges
+            || !TryPrepareTemplateForSave()
             || !SaveAllTemplates(skipValidation: false))
         {
             return;
@@ -1042,11 +1092,6 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
 
     private void QueueTemplateButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!SaveAllTemplates(skipValidation: true))
-        {
-            return;
-        }
-
         var rows = BuildTemplateRowsFromUi();
         var selectedTarget = _queueTargets.FirstOrDefault();
         var targetStatus = selectedTarget?.PlanningStatus ?? _selectedVillageStatus;
@@ -1101,11 +1146,6 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
 
     private void QueueMultipleVillagesButton_Click(object sender, RoutedEventArgs e)
     {
-        if (!SaveAllTemplates(skipValidation: true))
-        {
-            return;
-        }
-
         var window = new BuildingTemplateVillageQueueWindow(_queueTargets, BuildTemplateRowsFromUi(), _serverSpeed)
         {
             Owner = this,
@@ -1153,6 +1193,8 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
         {
             _store.Save(Templates.ToList());
             _templateLoadWarning = null;
+            _savedTemplateSnapshot = CaptureTemplateSnapshot();
+            UpdateHasUnsavedChanges();
             return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -1164,6 +1206,13 @@ public partial class BuildingTemplatesWindow : Window, INotifyPropertyChanged
 
     private IReadOnlyList<BuildingTemplateRow> BuildTemplateRowsFromUi()
         => Rows.Select(row => row.ToTemplateRow()).ToList();
+
+    private string CaptureTemplateSnapshot()
+        => BuildingTemplateEditSnapshot.Capture(Templates, SelectedTemplate, BuildTemplateRowsFromUi());
+
+    private void UpdateHasUnsavedChanges()
+        => HasUnsavedChanges = _savedTemplateSnapshot is not null
+            && !string.Equals(_savedTemplateSnapshot, CaptureTemplateSnapshot(), StringComparison.Ordinal);
 
     private void RequestPlanPreviewRefresh()
     {
@@ -1359,6 +1408,7 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
             if (SetProperty(ref _kind, value))
             {
                 OnPropertyChanged(nameof(IsBuildingRow));
+                OnPropertyChanged(nameof(IsWatchtowerRow));
                 OnPropertyChanged(nameof(IsSlotSelectable));
                 RefreshTargetOptionsView();
                 EnsureTargetMatchesKind();
@@ -1416,10 +1466,11 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
     }
 
     public bool IsBuildingRow => string.Equals(Kind, "Building", StringComparison.OrdinalIgnoreCase);
+    public bool IsWatchtowerRow => string.Equals(Kind, "Watchtowers", StringComparison.OrdinalIgnoreCase);
     public bool IsSlotSelectable => IsBuildingRow && Target?.FixedSlotId is null;
     public IReadOnlyList<string> SlotOptions => Target?.FixedSlotId is int fixedSlot
         ? [fixedSlot.ToString()]
-        : ["Auto", .. Enumerable.Range(19, 20).Select(item => item.ToString())];
+        : ["Auto", .. BuildingSlotPolicy.OrdinarySlots(CityStatus.City).Select(item => item.ToString())];
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -1433,7 +1484,7 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
         _resourceOptions = resourceOptions;
         RefreshTargetOptionsView();
 
-        var options = IsBuildingRow ? _buildingOptions : _resourceOptions;
+        var options = ResolveOptions();
         var matchingTarget = IsBuildingRow
             ? options.FirstOrDefault(item => item.Gid == currentGid)
             : options.FirstOrDefault(item => string.Equals(item.ResourceScope, currentResourceScope, StringComparison.OrdinalIgnoreCase));
@@ -1469,7 +1520,13 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
 
         return new BuildingTemplateRowView
         {
-            Kind = row.Kind == BuildingTemplateRowKind.AllResources ? "Add resources" : "Building",
+            Id = row.Id,
+            Kind = row.Kind switch
+            {
+                BuildingTemplateRowKind.AllResources => "Add resources",
+                BuildingTemplateRowKind.Watchtowers => "Watchtowers",
+                _ => "Building",
+            },
             Target = target,
             SlotText = target?.FixedSlotId?.ToString() ?? row.PreferredSlotId?.ToString() ?? "Auto",
             TargetLevel = Math.Max(1, row.TargetLevel).ToString(),
@@ -1479,18 +1536,20 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
 
     public BuildingTemplateRow ToTemplateRow()
     {
-        var isAllResources = !IsBuildingRow;
+        var isAllResources = !IsBuildingRow && !IsWatchtowerRow;
         _ = int.TryParse(TargetLevel, out var targetLevel);
-        int? slotId = int.TryParse(SlotText, out var parsedSlot) && parsedSlot is >= 19 and <= 40
+        int? slotId = int.TryParse(SlotText, out var parsedSlot) && parsedSlot is >= 19 and <= 43
             ? parsedSlot
             : null;
         return new BuildingTemplateRow
         {
             Id = Id,
-            Kind = isAllResources ? BuildingTemplateRowKind.AllResources : BuildingTemplateRowKind.Building,
-            Gid = isAllResources ? null : Target?.Gid,
-            BuildingName = isAllResources ? Target?.Name ?? string.Empty : Target?.Name ?? string.Empty,
-            PreferredSlotId = isAllResources ? null : slotId,
+            Kind = IsWatchtowerRow
+                ? BuildingTemplateRowKind.Watchtowers
+                : isAllResources ? BuildingTemplateRowKind.AllResources : BuildingTemplateRowKind.Building,
+            Gid = isAllResources || IsWatchtowerRow ? null : Target?.Gid,
+            BuildingName = IsWatchtowerRow ? "Watchtowers" : Target?.Name ?? string.Empty,
+            PreferredSlotId = IsWatchtowerRow ? 40 : isAllResources ? null : slotId,
             TargetLevel = Math.Clamp(targetLevel, 1, 20),
             ResourceScope = isAllResources ? Target?.ResourceScope ?? "all" : "all",
             ResourceStrategy = ResourceStrategy,
@@ -1499,7 +1558,7 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
 
     private void RefreshTargetOptionsView()
     {
-        var options = IsBuildingRow ? _buildingOptions : _resourceOptions;
+        var options = ResolveOptions();
         var view = new ListCollectionView(options.ToList());
         view.GroupDescriptions.Add(new PropertyGroupDescription(nameof(BuildingTemplateTargetOption.Category)));
         TargetOptionsView = view;
@@ -1507,12 +1566,16 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
 
     private void EnsureTargetMatchesKind()
     {
-        var options = IsBuildingRow ? _buildingOptions : _resourceOptions;
+        var options = ResolveOptions();
         if (Target is null || !options.Any(item => Equals(item, Target)))
         {
             Target = options.FirstOrDefault(item => item.IsSelectable) ?? options.FirstOrDefault();
         }
     }
+
+    private IReadOnlyList<BuildingTemplateTargetOption> ResolveOptions() => IsWatchtowerRow
+        ? [new BuildingTemplateTargetOption(0, "Watchtowers", "City", "Separate two-slot City wall extension queue", 40)]
+        : IsBuildingRow ? _buildingOptions : _resourceOptions;
 
     private void ApplyTargetSlotSelection(BuildingTemplateTargetOption? target)
     {
@@ -1523,7 +1586,7 @@ public sealed class BuildingTemplateRowView : INotifyPropertyChanged
         }
 
         if (!string.Equals(SlotText, "Auto", StringComparison.OrdinalIgnoreCase)
-            && (!int.TryParse(SlotText, out var slotId) || slotId is < 19 or > 38))
+            && (!int.TryParse(SlotText, out var slotId) || !BuildingSlotPolicy.IsPotentialOrdinarySlot(slotId)))
         {
             SlotText = "Auto";
         }

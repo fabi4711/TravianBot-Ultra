@@ -50,10 +50,9 @@ internal sealed class PostLoginSnapshotOperation(IPostLoginSnapshotClient client
             skipOverviewNavigation: heroInventory is not null,
             cancellationToken);
 
-        var buildingStatus = await client.ReadBuildingsStatusAsync(cancellationToken);
         var villageStatus = await client.ReadVillageStatusAsync(
             accountSnapshot.Villages,
-            buildingStatus.Buildings,
+            [],
             cancellationToken);
 
         if (options.PostLoginReadTroopTrainingQueue)

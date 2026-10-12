@@ -7,6 +7,40 @@ namespace TbotUltra.Desktop.Tests;
 
 public sealed class QueueDisplayServicesTests
 {
+    [Theory]
+    [InlineData("clay", "Upgrade all clay fields to level 10")]
+    [InlineData("crop,clay", "Upgrade all clay + crop fields to level 10")]
+    [InlineData("wood,clay,iron,crop", "Upgrade all resource fields to level 10")]
+    public void Format_BulkResourceUpgrade_DescribesSelectedFieldTypes(string selectedTypes, string expected)
+    {
+        var item = Item(
+            "upgrade_all_resources_to_level",
+            new Dictionary<string, string>
+            {
+                [BotOptionPayloadKeys.ResourceUpgradeTargetLevel] = "10",
+                [BotOptionPayloadKeys.ResourceUpgradeTypes] = selectedTypes,
+            });
+
+        var displayName = QueueDisplayNameFormatter.Format(item, _ => null, _ => null, resourceFieldMaxLevel: 18);
+
+        Assert.Equal(expected, displayName);
+    }
+
+    [Fact]
+    public void Format_LegacyBulkResourceUpgradeWithoutTypes_DescribesAllFields()
+    {
+        var item = Item(
+            "upgrade_all_resources_to_level",
+            new Dictionary<string, string>
+            {
+                [BotOptionPayloadKeys.ResourceUpgradeTargetLevel] = "10",
+            });
+
+        var displayName = QueueDisplayNameFormatter.Format(item, _ => null, _ => null, resourceFieldMaxLevel: 18);
+
+        Assert.Equal("Upgrade all resource fields to level 10", displayName);
+    }
+
     [Fact]
     public void Format_ResourceUpgrade_UsesPayloadNameAndSlot()
     {
@@ -89,6 +123,7 @@ public sealed class QueueDisplayServicesTests
     {
         var id = Guid.NewGuid();
         var createdAt = DateTimeOffset.Parse("2026-06-17T10:00:00Z");
+        var completedAt = createdAt.AddMinutes(10);
         var nextAttemptAt = createdAt.AddMinutes(5);
         var item = Item("upgrade_building_to_level", new Dictionary<string, string>());
         item.Id = id;
@@ -97,6 +132,7 @@ public sealed class QueueDisplayServicesTests
         item.MaxRetries = 3;
         item.IsRuntimeOnly = true;
         item.CreatedAt = createdAt;
+        item.UpdatedAt = completedAt;
         item.NextAttemptAt = nextAttemptAt;
 
         var row = QueueItemRowFactory.Create(
@@ -115,6 +151,8 @@ public sealed class QueueDisplayServicesTests
         Assert.Equal("Upgrade Main Building to level 10", row.DisplayName);
         Assert.Equal("1/3", row.RetriesText);
         Assert.True(row.IsRuntimeOnly);
+        Assert.Equal(completedAt, row.UpdatedAt);
+        Assert.Equal($"server:{completedAt.ToUnixTimeSeconds()}", row.HistoryAtServer);
         Assert.Equal($"server:{nextAttemptAt.ToUnixTimeSeconds()}", row.NextAttemptAtServer);
         Assert.True(row.HasEstimate);
         Assert.Equal("1h 1m", row.BuildTimeText);

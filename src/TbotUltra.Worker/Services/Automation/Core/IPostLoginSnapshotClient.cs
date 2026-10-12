@@ -11,7 +11,6 @@ internal interface IPostLoginSnapshotClient
     bool? KnownGoldClubEnabled { get; }
     Task<HeroInventoryResources> ReadHeroInventoryResourcesAsync(CancellationToken cancellationToken = default, bool suppressUiSync = false);
     Task<AccountSnapshot> ReadAccountSnapshotAsync(bool forceRefreshVillages = false, bool preferCurrentPageVillages = false, bool restorePageAfterProfile = true, bool suppressEnsureUiSync = false, bool skipOverviewNavigation = false, CancellationToken cancellationToken = default);
-    Task<VillageStatus> ReadBuildingsStatusAsync(CancellationToken cancellationToken = default);
     Task<VillageStatus> ReadVillageStatusAsync(IReadOnlyList<Village> knownVillages, IReadOnlyList<Building> knownBuildings, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TroopTrainingQueueStatus>> ReadTroopTrainingQueuesAsync(IReadOnlyList<Building>? knownBuildings = null, CancellationToken cancellationToken = default);
     Task<int?> RefreshAdventureCountAsync(bool forceReload = true, CancellationToken cancellationToken = default);

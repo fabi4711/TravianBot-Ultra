@@ -11,6 +11,72 @@ namespace TbotUltra.Worker.Tests;
 public sealed class QueueStoreAndSchedulerTests : IDisposable
 {
     [Fact]
+    public void TrimSucceededRuntimeHistory_RetainsRecentRowsAndAllActionableHistory()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var items = Enumerable.Range(0, JsonQueueStore.RetainedSucceededRuntimeHistory + 10)
+            .Select(index => new QueueItem
+            {
+                Id = Guid.NewGuid(),
+                TaskName = "runtime:test",
+                IsRuntimeOnly = true,
+                Status = QueueStatus.Succeeded,
+                CreatedAt = now.AddMinutes(-index),
+                UpdatedAt = now.AddMinutes(-index),
+            })
+            .ToList();
+        var newestRuntimeId = items[0].Id;
+        var oldestRuntimeId = items[^1].Id;
+        var failedRuntime = new QueueItem
+        {
+            TaskName = "runtime:failed",
+            IsRuntimeOnly = true,
+            Status = QueueStatus.Failed,
+        };
+        var normalSucceeded = new QueueItem
+        {
+            TaskName = "status",
+            IsRuntimeOnly = false,
+            Status = QueueStatus.Succeeded,
+        };
+        items.Add(failedRuntime);
+        items.Add(normalSucceeded);
+
+        var removed = JsonQueueStore.TrimSucceededRuntimeHistory(items);
+
+        Assert.Equal(10, removed);
+        Assert.Equal(
+            JsonQueueStore.RetainedSucceededRuntimeHistory,
+            items.Count(item => item.IsRuntimeOnly && item.Status == QueueStatus.Succeeded));
+        Assert.Contains(items, item => item.Id == newestRuntimeId);
+        Assert.DoesNotContain(items, item => item.Id == oldestRuntimeId);
+        Assert.Contains(items, item => item.Id == failedRuntime.Id);
+        Assert.Contains(items, item => item.Id == normalSucceeded.Id);
+    }
+
+    [Fact]
+    public async Task MarkSucceeded_RetriesThroughLongExternalQueueFileLock()
+    {
+        var store = new JsonQueueStore(_queuePath);
+        var item = store.Add("status", null, priority: 0, maxRetries: 0);
+        Assert.True(store.MarkRunning(item.Id));
+
+        using var gate = new ManualResetEventSlim(false);
+        var locker = Task.Run(() =>
+        {
+            using var stream = new FileStream(_queuePath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            gate.Set();
+            Thread.Sleep(900);
+        });
+
+        gate.Wait();
+        Assert.True(store.MarkSucceeded(item.Id));
+        await locker;
+
+        Assert.Equal(QueueStatus.Succeeded, store.GetAll().Single(entry => entry.Id == item.Id).Status);
+    }
+
+    [Fact]
     public void ApplyPendingReconciliation_UpdatesAndRemovesInOneStoreOperation()
     {
         var store = new JsonQueueStore(_queuePath);
@@ -335,6 +401,7 @@ public sealed class QueueStoreAndSchedulerTests : IDisposable
                 "upgrade_resource_to_level",
                 "upgrade_all_resources_to_level",
                 "upgrade_building_to_level",
+                "upgrade_watchtowers_to_level",
                 "upgrade_building_to_max",
                 "construct_building",
                 "load_buildings_snapshot",
@@ -979,6 +1046,41 @@ public sealed class QueueStoreAndSchedulerTests : IDisposable
         Assert.Equal("value", persisted.Payload["stable"]);
         Assert.Equal("true", persisted.Payload[BotOptionPayloadKeys.ConstructionLoginFill]);
         Assert.Equal(BotOptionPayloadKeys.UpgradeDeferReasonResources, persisted.Payload[BotOptionPayloadKeys.UpgradeDeferReason]);
+    }
+
+    [Fact]
+    public void QueueStore_ResourceDeferCannotBeReleasedByStaleQueueFullRefresh()
+    {
+        var store = new JsonQueueStore(_queuePath);
+        var item = store.Add(
+            "upgrade_all_resources_to_level",
+            new Dictionary<string, string>
+            {
+                [BotOptionPayloadKeys.UpgradeDeferReason] = BotOptionPayloadKeys.UpgradeDeferReasonQueueFull,
+            },
+            priority: 1,
+            maxRetries: 3);
+        Assert.True(store.MarkRunning(item.Id));
+
+        Assert.True(store.MarkDeferred(
+            item.Id,
+            TimeSpan.FromMinutes(2),
+            new Dictionary<string, string>
+            {
+                [BotOptionPayloadKeys.UpgradeDeferReason] = BotOptionPayloadKeys.UpgradeDeferReasonResources,
+            }));
+        var deferred = Assert.Single(store.GetAll());
+        Assert.Equal(BotOptionPayloadKeys.UpgradeDeferReasonResources,
+            deferred.Payload[BotOptionPayloadKeys.UpgradeDeferReason]);
+
+        Assert.False(store.PatchDeferred(
+            item.Id,
+            null,
+            null,
+            TimeSpan.Zero,
+            expectedDeferReason: BotOptionPayloadKeys.UpgradeDeferReasonQueueFull));
+        var persisted = Assert.Single(store.GetAll());
+        Assert.Equal(deferred.NextAttemptAt, persisted.NextAttemptAt);
     }
 
     [Fact]

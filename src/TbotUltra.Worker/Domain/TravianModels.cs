@@ -11,7 +11,22 @@ public sealed record Village(
     int? CoordY = null,
     int? Population = null,
     int? CropFields = null,
-    string Tribe = "Unknown");
+    string Tribe = "Unknown",
+    CityStatus CityStatus = CityStatus.Unknown);
+
+public enum CityCapability
+{
+    Unknown = 0,
+    Disabled = 1,
+    Enabled = 2,
+}
+
+public enum CityStatus
+{
+    Unknown = 0,
+    Village = 1,
+    City = 2,
+}
 
 public sealed record CapitalProfileCheckResult(string VillageName, int CoordX, int CoordY);
 
@@ -22,7 +37,8 @@ public sealed record AccountSnapshot(
     IReadOnlyList<Village> Villages,
     DateTimeOffset? ServerTimeUtc = null,
     int? ActiveVillageCoordX = null,
-    int? ActiveVillageCoordY = null);
+    int? ActiveVillageCoordY = null,
+    CityCapability CityCapability = CityCapability.Unknown);
 
 public sealed record ReportPngResult(bool IsReportPage, string Url, string? FilePath);
 
@@ -156,6 +172,26 @@ public sealed record ActiveConstruction(
     int? Gid = null,
     string? Href = null);
 
+public sealed record WatchtowerConstruction(
+    int Level,
+    int? TimeLeftSeconds,
+    string? FinishAtText,
+    TimerSnapshot? Finish = null);
+
+public sealed record WatchtowerStatus(
+    int Level,
+    IReadOnlyList<WatchtowerConstruction> Active,
+    DateTimeOffset ObservedAtUtc,
+    int? NextLevelWood = null,
+    int? NextLevelClay = null,
+    int? NextLevelIron = null,
+    int? NextLevelCrop = null,
+    int? NextLevelBuildSeconds = null)
+{
+    public int ProjectedLevel => Math.Max(Level, Active.Count == 0 ? Level : Active.Max(item => item.Level));
+    public bool QueueFull => Active.Count >= 2;
+}
+
 public sealed record ConstructionSlotStatus(
     IReadOnlyList<ActiveConstruction> Active,
     int ResourceSlotsUsed,
@@ -234,12 +270,17 @@ public enum HeroInventoryObservationSource
     TransferDeduction = 4,
 }
 
+public sealed record HeroConstructionProbeState(
+    int ConsecutiveInsufficientObservations = 0,
+    DateTimeOffset? NextProbeAtUtc = null);
+
 public sealed record HeroInventorySnapshot(
     HeroInventoryResources Resources,
     DateTimeOffset UpdatedAtUtc,
     HeroInventoryObservationSource Source = HeroInventoryObservationSource.Unknown,
     int ConsecutiveEmptyObservations = 0,
-    DateTimeOffset? NextProbeAtUtc = null);
+    DateTimeOffset? NextProbeAtUtc = null,
+    HeroConstructionProbeState? ConstructionProbe = null);
 
 public sealed record HeroAdventureDispatchResult(
     bool IsInHomeVillage,
@@ -339,7 +380,10 @@ public sealed record VillageStatus(
     DateTimeOffset? TroopPresenceObservedAtUtc = null,
     // Current-page observation captured by the jitter resource read. Null means the page did not
     // expose an authoritative Plus marker, so consumers must retain their last known state.
-    bool? TravianPlusActive = null);
+    bool? TravianPlusActive = null,
+    CityCapability CityCapability = CityCapability.Unknown,
+    CityStatus CityStatus = CityStatus.Unknown,
+    WatchtowerStatus? WatchtowerStatus = null);
 
 public enum IncomingAttackMovementType
 {
@@ -412,7 +456,13 @@ public sealed record FarmListOverview(
     // wrapper, so this ordinal is the grouping key that keeps two villages with the same display name apart.
     int? VillageIndex = null);
 
-public sealed record FarmListSendEntry(string Name, string? ListId);
+public sealed record FarmListSendEntry(
+    string Name,
+    string? ListId,
+    DateTimeOffset? ConfirmedAtUtc = null,
+    string? Response = null);
+
+public sealed record FarmListSingleSendResult(int? RemainingSeconds, FarmListSendEntry Entry);
 
 public sealed record FarmListSendBatchResult(
     IReadOnlyList<FarmListSendEntry> AttemptedLists,
@@ -459,6 +509,8 @@ public sealed record FarmLossDestinationChange(
     string BaseName,
     string VillageName,
     FarmListLossColors LossColors = FarmListLossColors.Both);
+
+public sealed record FarmListHistoryUpdated(string AccountName, string? ServerUrl);
 
 public sealed record FarmCoordinate(
     int X,

@@ -37,7 +37,7 @@ A Warehouse or Granary that does not exist in a village. Its construction is a s
 _Avoid_: Automatic storage construction, missing capacity
 
 **Stale Resource Wait Validation**:
-One immediate live resource check for a resource-deferred Construction Queue Head after a confirmed empty construction overview. It may release a stale `page_timer`; it never polls Hero inventory.
+One immediate live resource check per changed blocker/resource observation for a resource-deferred Construction Queue Head after an independent confirmed-empty or newly-full construction observation. It may release a stale `page_timer`, but its own post-defer observation and unchanged full resources cannot release the resulting deadline; it never polls Hero inventory.
 _Avoid_: Timer bypass, resource refresh loop
 
 **Live-verified Free Construction Slot**:
@@ -109,7 +109,7 @@ A pre-navigation decision using complete local construction inputs for resource 
 _Avoid_: Cached resource guess, unconditional navigation skip
 
 **Live Construction Resource Snapshot**:
-A complete Dorf1 storage, stock, and production observation captured during the current village run. It may be reused across that run and is the only village-resource snapshot allowed to produce a Blocked Construction Affordability Preflight result.
+A complete current-page storage and stock observation captured during the current village run, with production from the latest coordinate-owned Dorf1 observation when needed. Dorf2 stock is valid. Only live stock may produce a Blocked Construction Affordability Preflight result; navigate to Dorf1 for missing production only when a real resource shortfall needs a wait calculation.
 _Avoid_: Restored resource cache, stale blocking snapshot
 
 **Construction Affordability Deadline**:
@@ -127,6 +127,46 @@ _Avoid_: Assumed NPC availability, preflight Gold reservation
 **Construction Card Waiting Color**:
 Amber/yellow is used for `Res:`, `Req:`, `Waiting:`, and `Retry:` Construction card messages. Blue is reserved for `Empty queue`.
 _Avoid_: Green waiting state, mixed status colors
+
+**City Capability**:
+The automatically detected account-world property `Enabled`, `Disabled`, or `Unknown`, obtained from Travian's published server feature flags rather than inferred from one village. It is read after successful login, cached per account/server, and refreshed for a new session, account switch, or reconnect. Failure produces `Unknown` without stopping unrelated automation. It has no user-controlled setting; status is exposed only through relevant diagnostics and tooltips.
+_Avoid_: City server guess, profile-derived server type
+
+**City Status**:
+The per-village classification `City`, `Village`, or `Unknown`, derived from live owned-village evidence. A successful current-village Dorf2 read is authoritative over profile data; explicit City markers or slots 41–43 mean `City`, while a complete normal Dorf2 means `Village`. Failed or incomplete reads produce `Unknown` and must not erase a previously confirmed classification. Profile rows may discover other Cities without extra village navigation. Conflicts are logged without stopping unrelated automation.
+_Avoid_: City Capability, extra-slot guess
+
+**Watchtower Extension**:
+A City-only extension attached to the village wall in slot 40, with its own level and independent two-place Official construction queue.
+_Avoid_: Watchtower building, wall level, ordinary construction slot
+
+**Watchtower Eligibility**:
+A Watchtower Extension may be queued only when City Capability and the target village's City Status are both confirmed and a wall exists.
+_Avoid_: City-looking wall, ordinary wall upgrade eligibility
+
+**City-Gated Queue Item**:
+A persisted Watchtower or Waterworks task whose current verified City rules do not permit execution. It remains saved but is marked blocked with an exact reason, skipped without navigation or retry backoff, and becomes runnable again automatically if later verified state satisfies its eligibility.
+_Avoid_: Deleted invalid task, retrying invalid task, program-wide block
+
+**Watchtower Status Refresh**:
+A per-village, demand-driven read of the wall page used to persist Watchtower level and its independent queue per account and world. Read when no persisted snapshot exists for a confirmed City, when Watchtower work is queued or due, or when the user explicitly loads building details; generic startup/status reads reuse the persisted snapshot without age-based refresh.
+_Avoid_: Every-scan wall visit, Dorf2-derived Watchtower timer
+
+**Watchtower Target**:
+An explicit Watchtower level selected from the wall card or a building template and executed through the separate Watchtower queue lane. It is excluded from the general Upgrade all to max action.
+_Avoid_: Wall target, implicit max upgrade, ordinary building target
+
+**Waterworks Eligibility**:
+An Egyptian village with Hero's Mansion level 10 may build Waterworks on a regular world; on a world with City Capability it must additionally have confirmed City Status.
+_Avoid_: Capital-only Waterworks, Egyptian-building-only check
+
+**City Resource Field Ceiling**:
+The level-12 resource-field limit for a confirmed non-capital City; capitals retain their existing higher resource-field ceiling.
+_Avoid_: Universal level 12, City building level
+
+**City Building Slots**:
+The three additional ordinary building slots 41–43 available only to a village with confirmed City Status; fixed Rally Point slot 39 and wall slot 40 remain unchanged.
+_Avoid_: Watchtower slots, assumed extra slots
 
 **Demolition Sequence**:
 A village-scoped queued target that lowers one building level at a time. Each confirmed Travian demolition stores an absolute next-attempt deadline made from the server timer plus the configured human delay.
@@ -148,6 +188,10 @@ _Avoid_: Dodge queue, attack scanner
 One between-actions iteration shared by Continuous Loop and Auto Queue. It may execute at most one eligible queued action before the next selection.
 _Avoid_: Loop tick, Auto Queue iteration
 
+**Village Task Priority**:
+One account-and-world-specific order of user-facing automation task groups, applied separately within each village. It chooses the first ready group, skipping ineligible groups without reserving resources, reordering work across villages or within a group, or delaying urgent safety work, explicit user-requested immediate work, or internal account work.
+_Avoid_: Resource reservation, account-wide task order
+
 **Send Troops**:
 The verified Official Travian flow that opens the Rally Point troop form and prepares troop dispatch for combat or Farm Lists.
 _Avoid_: Manual Farming, Natar farming
@@ -157,7 +201,7 @@ The required minimum/maximum wait for one Farm List in Individual schedule mode,
 _Avoid_: Farm-list pacing, round delay
 
 **Farm List Send Mode**:
-One of Individual schedule (enabled UI lists use their own intervals), Shared schedule (enabled UI lists use one account-wide interval), or Send all (Travian's Start all sends every account list regardless of UI toggles).
+One of Individual schedule (enabled UI lists use their own intervals), Shared schedule (enabled UI lists use one account-wide interval), or Send all (all enabled lists on one account-wide interval). Disabled lists are never sent by the UI or automatic farming.
 _Avoid_: Send toggled lists, fallback interval
 
 **Farm Target Protection**:

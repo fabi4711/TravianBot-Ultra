@@ -7,6 +7,50 @@ namespace TbotUltra.Worker.Tests;
 public sealed class IncomingAttackDomParserTests
 {
     [Fact]
+    public void Dorf1Parking_UsesEarliestIncomingOrOutgoingMovement()
+    {
+        const string html = """
+            <div class="villageInfobox movements"><table id="movements"><tbody>
+              <tr><th>Incoming troops:</th></tr>
+              <tr><td class="typ"><img class="def1"></td><td><span class="timer" value="50">0:00:50</span></td></tr>
+              <tr><th>Outgoing troops:</th></tr>
+              <tr><td class="typ"><img class="att2"></td><td><span class="timer" data-value="50">0:00:40</span></td></tr>
+            </tbody></table></div>
+            """;
+        var countdown = IncomingAttackDomParser.ParseDorf1MovementCountdown(html);
+        var now = new DateTimeOffset(2026, 10, 12, 12, 0, 0, TimeSpan.Zero);
+
+        Assert.True(countdown.HasMovements);
+        Assert.Equal(40, countdown.NextSeconds);
+        Assert.False(IncomingAttackDomParser.ShouldParkOnDorf2(countdown, now.AddSeconds(10), now));
+        Assert.False(IncomingAttackDomParser.ShouldParkOnDorf2(countdown, now.AddSeconds(20), now));
+        Assert.True(IncomingAttackDomParser.ShouldParkOnDorf2(countdown, now.AddSeconds(21), now));
+        Assert.True(IncomingAttackDomParser.ShouldParkOnDorf2(countdown, null, now));
+    }
+
+    [Fact]
+    public void Dorf1Parking_StaysWhenNoMovementsExist()
+    {
+        var countdown = IncomingAttackDomParser.ParseDorf1MovementCountdown(
+            "<div class=\"villageInfobox movements\"><table id=\"movements\"><tr><th>Incoming troops:</th></tr></table></div>");
+
+        Assert.False(countdown.HasMovements);
+        Assert.False(IncomingAttackDomParser.ShouldParkOnDorf2(countdown, null, DateTimeOffset.UtcNow));
+        Assert.False(IncomingAttackDomParser.ParseDorf1MovementCountdown("<div id=\"villageName\"></div>").HasMovements);
+    }
+
+    [Fact]
+    public void Dorf1Parking_ParksWhenMovementTimerIsUnreadable()
+    {
+        var countdown = IncomingAttackDomParser.ParseDorf1MovementCountdown(
+            "<div class=\"villageInfobox movements\"><table id=\"movements\"><tr><td class=\"typ\"><img class=\"att1\"></td><td><span class=\"timer\">loading</span></td></tr></table></div>");
+
+        Assert.True(countdown.HasMovements);
+        Assert.Null(countdown.NextSeconds);
+        Assert.True(IncomingAttackDomParser.ShouldParkOnDorf2(countdown, DateTimeOffset.UtcNow.AddSeconds(1), DateTimeOffset.UtcNow));
+    }
+
+    [Fact]
     public void CurrentPageSignalRead_UsesPlusOverviewOutsideDorf1WithoutClaimingAuthoritativeDorf1Read()
     {
         var root = ProjectRootLocator.FindProjectRoot();

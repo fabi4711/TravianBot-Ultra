@@ -18,14 +18,14 @@ internal sealed class AutomationQueueEligibility(
 {
     internal bool IsAllowed(QueueItem item)
     {
-        var villageKey = port.GetVillageKey(item);
-        if (string.Equals(item.TaskName, "send_farmlists", StringComparison.OrdinalIgnoreCase)
-            && string.IsNullOrWhiteSpace(villageKey)
-            && string.IsNullOrWhiteSpace(port.GetVillageName(item)))
+        // Farm lists and their Rally Point access are account-wide. The worker opens the farm page
+        // from the current village and falls back to another owned Rally Point when needed.
+        if (string.Equals(item.TaskName, "send_farmlists", StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return IsGroupEnabled(villageKey: null, QueueGroup.Farming);
         }
 
+        var villageKey = port.GetVillageKey(item);
         if (item.Group == QueueGroup.Account)
         {
             return true;

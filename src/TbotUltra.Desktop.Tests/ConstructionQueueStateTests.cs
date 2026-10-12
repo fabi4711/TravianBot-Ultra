@@ -723,7 +723,7 @@ public sealed class ConstructionQueueStateTests
     }
 
     [Fact]
-    public void ShouldPrepareConfirmedEmptyQueueHead_ReleasesFuturePageTimerResourceWait()
+    public void ShouldPrepareConfirmedEmptyQueueHead_ReleasesPageTimerResourceWaitOnlyOncePerSnapshot()
     {
         var now = new DateTimeOffset(2026, 8, 1, 8, 55, 28, TimeSpan.Zero);
         var resourceWait = new QueueItem
@@ -737,6 +737,11 @@ public sealed class ConstructionQueueStateTests
         };
 
         Assert.True(ConstructionQueueState.ShouldPrepareConfirmedEmptyQueueHead(resourceWait, now));
+
+        resourceWait.Payload[BotOptionPayloadKeys.ConfirmedEmptyResourceValidationFingerprint] =
+            ConstructionQueueState.CreateConfirmedEmptyResourceValidationFingerprint(resourceWait);
+
+        Assert.False(ConstructionQueueState.ShouldPrepareConfirmedEmptyQueueHead(resourceWait, now));
     }
 
     [Fact]
@@ -787,6 +792,30 @@ public sealed class ConstructionQueueStateTests
         Assert.Contains(swollsterHead, result);
         Assert.Contains(secondVillageHead, result);
         Assert.DoesNotContain(swollsterLater, result);
+    }
+
+    [Fact]
+    public void SelectResourceDeferredHeadsToRelease_DoesNotBypassRepeatedPageTimerBackoff()
+    {
+        var firstWaitHead = DeferredItem(
+            BotOptionPayloadKeys.UpgradeDeferReasonResources,
+            Now.AddMinutes(1));
+        firstWaitHead.Payload[BotOptionPayloadKeys.ConstructionDeferBackoffSignature] =
+            "construct_building|resources|page_timer|building_slot_20_construct_granary";
+        firstWaitHead.Payload[BotOptionPayloadKeys.ConstructionDeferBackoffCount] = "1";
+        var guardedHead = DeferredItem(
+            BotOptionPayloadKeys.UpgradeDeferReasonResources,
+            Now.AddMinutes(30));
+        guardedHead.Payload[BotOptionPayloadKeys.ConstructionDeferBackoffSignature] =
+            "construct_building|resources|page_timer|building_slot_20_construct_granary";
+        guardedHead.Payload[BotOptionPayloadKeys.ConstructionDeferBackoffCount] = "2";
+
+        var result = ConstructionQueueState.SelectResourceDeferredHeadsToRelease(
+            [(firstWaitHead, "first"), (guardedHead, "ramp")],
+            Now);
+
+        Assert.Contains(firstWaitHead, result);
+        Assert.DoesNotContain(guardedHead, result);
     }
 
     [Fact]

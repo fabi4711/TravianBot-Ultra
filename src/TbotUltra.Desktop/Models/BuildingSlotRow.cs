@@ -20,6 +20,18 @@ public sealed class BuildingSlotRow
 
     public bool IsWallSlot { get; init; }
     public bool IsRallyPointSlot { get; init; }
+    public int? WatchtowerLevel { get; init; }
+    public int? WatchtowerProjectedLevel { get; init; }
+    public bool CanQueueWatchtowers { get; init; }
+    public int? WatchtowerUpgradeBaseLevel => CanQueueWatchtowers && IsWallSlot
+        ? WatchtowerProjectedLevel ?? WatchtowerLevel
+        : null;
+    public bool HasWatchtowerStatus => WatchtowerLevel.HasValue;
+    public string WatchtowerStatusLabel => WatchtowerLevel is not int level
+        ? string.Empty
+        : WatchtowerProjectedLevel is int projected && projected > level
+            ? $"Watchtowers {level} ({projected})"
+            : $"Watchtowers {level}";
 
     public string LevelLabel => Level is int value ? value.ToString() : "unknown";
     // A slot is occupied when it carries a real building identity. Level can be 0 while a brand-new
@@ -65,4 +77,11 @@ public sealed class BuildingSlotRow
     public bool IsMaxLevel => CanQueueUpgrade
         && UpgradeGid is int gid
         && UpgradeBaseLevel >= BuildingCatalogService.MaxLevelFor(gid);
+
+    public bool CanQueueOneLevelUpgrade => CanQueueUpgrade && !IsMaxLevel;
+    public string QuickUpgradeToolTip => IsMaxLevel
+        ? $"{UpgradeName} is already at maximum level."
+        : CanQueueUpgrade
+            ? $"Queue {UpgradeName} to level {UpgradeBaseLevel + 1}."
+            : "Build something in this slot before upgrading it.";
 }

@@ -10,8 +10,10 @@ public interface IDesktopBotService
     long BrowserGeneration { get; }
 
     event Action<FarmLossDestinationChange>? FarmLossDestinationChanged;
+    event Action<FarmListHistoryUpdated>? FarmListHistoryUpdated;
     event Action<VerifiedActiveVillage>? ActiveVillageVerified;
     event Action<ConstructionQueueObservation>? ConstructionQueueObserved;
+    event Action<WatchtowerStatusObservation>? WatchtowerStatusObserved;
     event Action<BotTaskActivity>? TaskActivityRecorded;
     QueueItem Enqueue(string taskName, Dictionary<string, string>? payload, int priority, int maxRetries);
     IReadOnlyList<QueueItem> EnqueueBatch(IReadOnlyList<QueueItemCreateRequest> requests);
@@ -33,13 +35,14 @@ public interface IDesktopBotService
     bool MarkQueueItemRunning(Guid id);
     bool MarkQueueItemSucceeded(Guid id);
     bool MarkQueueItemCanceled(Guid id);
-    bool MarkQueueItemDeferred(Guid id, TimeSpan delay);
+    bool MarkQueueItemDeferred(Guid id, TimeSpan delay, IReadOnlyDictionary<string, string>? valuesToSet = null);
     bool UpdateDeferredQueueItem(Guid id, Dictionary<string, string>? payload, TimeSpan? delay = null);
     bool PatchDeferredQueueItem(
         Guid id,
         IReadOnlyDictionary<string, string>? valuesToSet,
         IReadOnlyCollection<string>? keysToRemove,
-        TimeSpan? delay = null);
+        TimeSpan? delay = null,
+        string? expectedDeferReason = null);
     bool UpdatePendingQueueItem(Guid id, Dictionary<string, string>? payload, int? priority, TimeSpan? delay = null);
     bool ApplyPendingQueueReconciliation(IReadOnlyList<Guid> removals, IReadOnlyList<QueuePayloadUpdate> updates);
     bool MarkQueueItemExecutionFailed(Guid id);
@@ -71,6 +74,12 @@ public interface IDesktopBotService
     Task ExecuteOnceAsync(BotOptions options, Action<string> log, IEnumerable<string>? tasksOverride, CancellationToken cancellationToken);
     Task<VillageStatus> ReadBuildingsStatusAsync(BotOptions options, Action<string> log, CancellationToken cancellationToken);
     Task<VillageStatus> ReadCurrentBuildingOverviewStatusAsync(BotOptions options, Action<string> log, CancellationToken cancellationToken);
+    Task<VillageStatus> ReadTargetBuildingOverviewStatusAsync(
+        BotOptions options,
+        Action<string> log,
+        string? villageName,
+        string? villageUrl,
+        CancellationToken cancellationToken);
     Task<IReadOnlyList<TroopTrainingQueueStatus>> ReadTroopTrainingQueuesAsync(BotOptions options, Action<string> log, IReadOnlyList<Building>? knownBuildings, CancellationToken cancellationToken);
     Task<BreweryCelebrationStatus> ReadBreweryCelebrationStatusAsync(BotOptions options, Action<string> log, IReadOnlyList<Building>? knownBuildings, CancellationToken cancellationToken);
     Task<SmithyUpgradeStatus> ReadSmithyUpgradeStatusAsync(BotOptions options, Action<string> log, IReadOnlyList<Building>? knownBuildings, CancellationToken cancellationToken);
@@ -99,6 +108,7 @@ public interface IDesktopBotService
     Task<ReportPngResult> SaveReportScreenshotAsync(BotOptions options, string filePath, bool hideAttacker, bool hideDefender, Action<string> log, CancellationToken cancellationToken);
     Task<PageHtmlCapture> NavigateToPageAndReadHtmlAsync(BotOptions options, string pagePath, Action<string> log, CancellationToken cancellationToken);
     Task NavigateToVillageResourceFieldsAsync(BotOptions options, Action<string> log, string? villageName, string? villageUrl, CancellationToken cancellationToken);
+    Task<bool> TryParkOnDorf2IfOnDorf1Async(BotOptions options, Action<string> log, DateTimeOffset? nextTaskAtUtc, CancellationToken cancellationToken);
     Task RefreshCurrentPageAsync(BotOptions options, Action<string> log, CancellationToken cancellationToken);
     Task<InboxStatus> ReadInboxStatusAsync(BotOptions options, Action<string> log, CancellationToken cancellationToken);
     Task<BulkMessageAnalyzeResult> AnalyzeBulkMessagePlayersAsync(BotOptions options, BulkMessageAnalyzeRequest request, Action<string> log, IProgress<BulkMessageProgress>? progress, CancellationToken cancellationToken);

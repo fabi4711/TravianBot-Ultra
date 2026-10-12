@@ -1,5 +1,12 @@
 namespace TbotUltra.Worker.Services;
 
+internal enum HeroPresence
+{
+    Unknown,
+    Home,
+    Away,
+}
+
 /// <summary>
 /// Stateless interpretation of hero status signals collected from Travian pages.
 /// </summary>
@@ -70,7 +77,7 @@ internal static class HeroStatusDecision
             && !isReinforcing;
     }
 
-    internal static bool ResolveIsInVillage(
+    internal static HeroPresence ResolvePresence(
         bool reinforcing,
         bool running,
         bool home,
@@ -80,40 +87,44 @@ internal static class HeroStatusDecision
     {
         if (reinforcing || running || officialAway)
         {
-            return false;
+            return HeroPresence.Away;
         }
 
         if (home)
         {
-            return true;
+            return HeroPresence.Home;
         }
 
         if (legacyStatus.HasValue)
         {
-            return legacyStatus is 50 or 100;
+            return legacyStatus is 50 or 100
+                ? HeroPresence.Home
+                : HeroPresence.Away;
         }
 
         var text = (sidebarText ?? string.Empty).ToLowerInvariant();
         if (string.IsNullOrWhiteSpace(text))
         {
-            return true;
+            return HeroPresence.Unknown;
         }
 
         if (text.Contains("home", StringComparison.Ordinal)
             || text.Contains("in this village", StringComparison.Ordinal)
             || text.Contains("in der heimat", StringComparison.Ordinal))
         {
-            return true;
+            return HeroPresence.Home;
         }
 
-        return !(text.Contains("på väg", StringComparison.Ordinal)
+        return text.Contains("på väg", StringComparison.Ordinal)
             || text.Contains("on the way", StringComparison.Ordinal)
             || text.Contains("adventure", StringComparison.Ordinal)
             || text.Contains("äventyr", StringComparison.Ordinal)
             || text.Contains("abenteuer", StringComparison.Ordinal)
             || text.Contains("dead", StringComparison.Ordinal)
             || text.Contains("tot", StringComparison.Ordinal)
-            || text.Contains("död", StringComparison.Ordinal));
+            || text.Contains("död", StringComparison.Ordinal)
+                ? HeroPresence.Away
+                : HeroPresence.Unknown;
     }
 
     internal static bool IsAdventureDispatchConfirmed(

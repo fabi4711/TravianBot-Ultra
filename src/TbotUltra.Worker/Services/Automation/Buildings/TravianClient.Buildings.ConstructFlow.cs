@@ -25,7 +25,7 @@ public sealed partial class TravianClient : IBuildingClient
     {
         using var navDiagnostics = BeginConstructionNavigationDiagnostics($"construct_building slot={slotId} gid={gid}");
         Notify($"[construct] starting — slot={slotId}, gid={gid}");
-        if (slotId < 19)
+        if (!BuildingSlotPolicy.IsPotentialOrdinarySlot(slotId) && slotId is not (39 or 40))
         {
             throw new InvalidOperationException($"Building slot {slotId} is outside the building range.");
         }
@@ -51,6 +51,12 @@ public sealed partial class TravianClient : IBuildingClient
             // possibly in a different slot. Run this village-wide identity check before queue and pacing
             // defers so an already-completed task is removed immediately instead of waiting another cycle.
             var liveBuildings = await ReadBuildingsAsync(cancellationToken, reuseFreshCurrentOverview: true);
+            if (slotId is >= BuildingSlotPolicy.FirstCityExtraSlot and <= BuildingSlotPolicy.LastCityExtraSlot
+                && _lastBuildingOverviewCityStatus != CityStatus.City)
+            {
+                throw new InvalidOperationException(
+                    $"Building slot {slotId} is a City-only slot, but the live dorf2 overview did not confirm this village as a City.");
+            }
             var existingVillageBuilding = FindExistingBuildingThatMakesConstructRedundant(
                 liveBuildings,
                 slotId,
@@ -62,6 +68,16 @@ public sealed partial class TravianClient : IBuildingClient
                 return WithEffectiveSlot(
                     $"Construct skipped: {buildingName} already exists at slot {existingVillageBuilding.SlotId} (confirmed level {existingVillageBuilding.Level} on dorf2). Removing from queue.",
                     existingVillageBuilding.SlotId);
+            }
+
+            // Level 0 is a confirmed construction, not an empty slot. A composite construct task
+            // resumes here after a queue-full defer; report the completed construct step so its
+            // upgrade step can wait for the live queue without opening construction categories again.
+            var constructingAtSlot = FindConstructingBuildingAtSlot(liveBuildings, slotId, gid, buildingName);
+            if (constructingAtSlot is not null)
+            {
+                Notify($"[construct] {buildingName} is already queued in slot {slotId} (live Dorf2 level 0); continuing the composite task.");
+                return WithEffectiveSlot($"Queued {buildingName} in slot {slotId}. Evidence: live Dorf2 confirms level 0.");
             }
 
             // Pre-flight queue gate: defer to program queue if no construction slot is free.
@@ -80,6 +96,27 @@ public sealed partial class TravianClient : IBuildingClient
                 return WithEffectiveSlot(humanizeDefer);
             }
 
+            var catalogCost = BuildingCatalogService.CostFor(gid, 1);
+            if (catalogCost is not null)
+            {
+                var preflightLabel = $"Building slot {slotId} construct {buildingName}";
+                var affordability = await EvaluateLiveConstructionAffordabilityAsync(
+                    catalogCost,
+                    preflightLabel,
+                    cancellationToken);
+                if (!affordability.ShouldOpenBuildPage)
+                {
+                    return WithEffectiveSlot(ConstructionAffordabilityOperation.BuildBlockedResult(
+                        preflightLabel,
+                        affordability,
+                        DateTimeOffset.UtcNow));
+                }
+            }
+            else
+            {
+                Notify($"[construction-preflight] Building slot {slotId}: catalog cost for gid {gid} level 1 is unavailable; retaining live construct-page fallback.");
+            }
+
             // Step 1: open the slot's construction page on the right category tab so the building's
             // wrapper actually exists in the DOM. Walls (slot 40) ignore category — only one option.
             var url = Paths.BuildBySlot(slotId);
@@ -88,7 +125,7 @@ public sealed partial class TravianClient : IBuildingClient
             {
                 url = Paths.BuildBySlotWithCategory(slotId, categoryIndex.Value);
             }
-            await GotoAsync(url, cancellationToken);
+            await OpenConstructSlotPageAsync(slotId, categoryIndex, cancellationToken);
 
             // Confirmed already-built guard: a stale construct task can target a slot that already holds the
             // building — e.g. a special fixed slot (Rally Point slot 39 / Wall slot 40 exist from founding)
@@ -103,7 +140,7 @@ public sealed partial class TravianClient : IBuildingClient
                 var builtGid = BuildingCatalogService.GidForName(built.Name);
                 if (!BuildingIdentityMatches(gid, buildingName, builtGid, built.Name))
                 {
-                    if (!allowSlotFallback || slotId is < 19 or > 38)
+                    if (!allowSlotFallback || !BuildingSlotPolicy.IsOrdinarySlot(slotId, _lastBuildingOverviewCityStatus))
                     {
                         throw new InvalidOperationException(
                             $"Building identity mismatch for slot {slotId}: queued '{buildingName}' (gid {gid}), "
@@ -111,7 +148,7 @@ public sealed partial class TravianClient : IBuildingClient
                     }
                 }
 
-                if (allowSlotFallback && slotId is >= 19 and <= 38)
+                if (allowSlotFallback && BuildingSlotPolicy.IsOrdinarySlot(slotId, _lastBuildingOverviewCityStatus))
                 {
                     var excludedSlots = ParseBuildingSlotIds(fallbackExcludedSlots);
                     var fallbackSlot = await FindFreeOrdinaryBuildingSlotAsync(excludedSlots, cancellationToken);
@@ -169,7 +206,7 @@ public sealed partial class TravianClient : IBuildingClient
                     return WithEffectiveSlot($"Slot {slotId}: {buildingName} construction already in progress (slot already holds gid {gid}). queue_wait_seconds={waitSeconds}");
                 }
 
-                if (occupiedGid > 0 && allowSlotFallback && slotId is >= 19 and <= 38)
+                if (occupiedGid > 0 && allowSlotFallback && BuildingSlotPolicy.IsOrdinarySlot(slotId, _lastBuildingOverviewCityStatus))
                 {
                     var excludedSlots = ParseBuildingSlotIds(fallbackExcludedSlots);
                     var fallbackSlot = await FindFreeOrdinaryBuildingSlotAsync(excludedSlots, cancellationToken);
@@ -460,8 +497,8 @@ public sealed partial class TravianClient : IBuildingClient
                 return (true, $"active construction detected for slot {matchingActiveConstruction.SlotId?.ToString(CultureInfo.InvariantCulture) ?? "unknown"} {matchingActiveConstruction.Name}");
             }
 
-            await GotoAsync(Paths.Buildings, cancellationToken);
-            var slots = await ReadBuildingInfosAsync(cancellationToken);
+            await OpenVillageOverviewAsync(resourceFields: false, cancellationToken);
+            var slots = (await ReadBuildingInfosAsync(cancellationToken)).Buildings;
             if (slots.TryGetValue(slotId, out var slotInfo))
             {
                 var slotGid = ParseGidFromBuildingCode(slotInfo.BuildingCode);
@@ -655,14 +692,14 @@ public sealed partial class TravianClient : IBuildingClient
     {
         var buildings = await ReadBuildingsAsync(cancellationToken, reuseFreshCurrentOverview: true);
         var occupiedSlots = buildings
-            .Where(item => item.SlotId is >= 19 and <= 38)
+            .Where(item => item.SlotId is int slot && BuildingSlotPolicy.IsOrdinarySlot(slot, _lastBuildingOverviewCityStatus))
             .Where(item => (item.Gid ?? 0) > 0
                 || (item.Level ?? 0) > 0
                 || (!string.IsNullOrWhiteSpace(item.Name)
                     && !string.Equals(item.Name, "Empty", StringComparison.OrdinalIgnoreCase)))
             .Select(item => item.SlotId!.Value)
             .ToHashSet();
-        return Enumerable.Range(19, 20)
+        return BuildingSlotPolicy.OrdinarySlots(_lastBuildingOverviewCityStatus)
             .FirstOrDefault(slot => !occupiedSlots.Contains(slot) && !excludedSlots.Contains(slot)) is int match && match > 0
                 ? match
                 : null;
@@ -673,7 +710,7 @@ public sealed partial class TravianClient : IBuildingClient
             ? []
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(item => int.TryParse(item, out var slot) ? slot : 0)
-                .Where(slot => slot is >= 19 and <= 38)
+                .Where(BuildingSlotPolicy.IsPotentialOrdinarySlot)
                 .ToHashSet();
 
     private static Building? FindExistingBuildingThatMakesConstructRedundant(
@@ -699,6 +736,16 @@ public sealed partial class TravianClient : IBuildingClient
 
         return null;
     }
+
+    private static Building? FindConstructingBuildingAtSlot(
+        IReadOnlyList<Building> buildings,
+        int targetSlotId,
+        int gid,
+        string buildingName)
+        => buildings.FirstOrDefault(building =>
+            building.SlotId == targetSlotId
+            && building.Level == 0
+            && BuildingIdentityMatches(gid, buildingName, building.Gid, building.Name));
 
     private static bool BuildingIdentityMatches(
         int expectedGid,
@@ -780,7 +827,8 @@ public sealed partial class TravianClient : IBuildingClient
             .ToList();
         var duplicateAllowed = BuildingCatalogService.AllowsMultipleInstances(gid);
         var wallGid = gid is 31 or 32 or 33 or 42 or 43;
-        if (!BuildingCatalogService.CanConstructInVillage(gid, status.IsCapital, out var locationReason))
+        if (!BuildingCatalogService.CanConstructInVillage(
+                gid, status.IsCapital, status.Tribe, status.CityCapability, status.CityStatus, out var locationReason))
         {
             throw new InvalidOperationException(locationReason);
         }
@@ -838,6 +886,55 @@ public sealed partial class TravianClient : IBuildingClient
         return missing;
     }
 
+    private async Task OpenConstructSlotPageAsync(int slotId, int? categoryIndex, CancellationToken cancellationToken)
+    {
+        await OpenSlotFromOverviewAsync(slotId, cancellationToken);
+        if (categoryIndex is not int category || slotId == 40)
+        {
+            return;
+        }
+
+        // Official appends gid to an occupied slot's URL and no longer renders construction
+        // category tabs. Let the caller's existing-building/occupied-gid guard classify it.
+        if (Regex.IsMatch(_page.Url, @"[?&]gid=\d+(?:&|$)", RegexOptions.IgnoreCase)
+            && await _page.Locator("[id^='contract_building'], #contract_building").CountAsync() == 0)
+        {
+            Notify($"[construct] slot {slotId} opened as an occupied build page; skipping construction category selection.");
+            return;
+        }
+
+        var categoryPath = Paths.BuildBySlotWithCategory(slotId, category);
+        if (IsCurrentUrlForPath(categoryPath))
+        {
+            return;
+        }
+
+        var categoryLink = $"a[href*='id={slotId}'][href$='category={category}'], a[href*='id={slotId}'][href*='category={category}&']";
+        if (!await TryClickFirstVisibleEnabledAsync(
+                categoryLink,
+                cancellationToken,
+                reason: $"select construction category {category} for slot {slotId}"))
+        {
+            throw new InvalidOperationException(
+                $"Cannot construct in slot {slotId}: category {category} has no visible tab link on '{_page.Url}'.");
+        }
+
+        await WaitForPageReadyAsync(cancellationToken);
+        if (!IsCurrentUrlForPath(categoryPath))
+        {
+            throw new InvalidOperationException(
+                $"Cannot construct in slot {slotId}: category click did not reach {categoryPath}. Current page: '{_page.Url}'.");
+        }
+
+        InvalidateActiveConstructionsCache();
+        await ApplyPacingDelayAsync(
+            _config.ActionPacingPageLoadMinSeconds,
+            _config.ActionPacingPageLoadMaxSeconds,
+            "page-load-pacing",
+            "after construction category click",
+            cancellationToken);
+    }
+
     private async Task EnsureExpectedConstructChoicePageAsync(
         int slotId,
         int gid,
@@ -884,7 +981,7 @@ public sealed partial class TravianClient : IBuildingClient
                 {
                     restoredExpectedSlot = true;
                     Notify($"{operationLabel} left construct slot {slotId}; restoring the expected page once.");
-                    await GotoAsync(constructUrl, cancellationToken);
+                    await OpenConstructSlotPageAsync(slotId, BuildingCatalogService.CategoryIndexFor(gid), cancellationToken);
                     await EnsureLoggedInAsync(cancellationToken: cancellationToken);
                     continue;
                 }
@@ -899,7 +996,7 @@ public sealed partial class TravianClient : IBuildingClient
             if (round < verificationRounds)
             {
                 Notify($"{operationLabel} construct choices are still missing after the transfer reload; reopening exact slot once.");
-                await GotoAsync(constructUrl, cancellationToken);
+                await OpenConstructSlotPageAsync(slotId, BuildingCatalogService.CategoryIndexFor(gid), cancellationToken);
                 await EnsureLoggedInAsync(cancellationToken: cancellationToken);
             }
         }

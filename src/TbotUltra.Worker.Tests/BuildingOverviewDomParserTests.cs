@@ -1,4 +1,5 @@
 using TbotUltra.Worker.Services;
+using TbotUltra.Worker.Domain;
 using Xunit;
 
 namespace TbotUltra.Worker.Tests;
@@ -23,5 +24,59 @@ public sealed class BuildingOverviewDomParserTests
         Assert.Equal("Empty", slot.BuildingName);
         Assert.False(slot.HasOccupancyEvidence);
         Assert.Equal(0, slot.Level);
+    }
+
+    [Fact]
+    public void Parse_CompleteOverviewWithExtraSlots_ConfirmsCity()
+    {
+        var slots = Enumerable.Range(19, 25)
+            .Select(slot => new BuildingOverviewSlotSnapshot
+            {
+                ClassName = $"buildingSlot aid{slot} g0",
+                OuterHtml = $"<div class='buildingSlot aid{slot} g0' data-aid='{slot}'></div>",
+            })
+            .ToList();
+        slots[0] = new BuildingOverviewSlotSnapshot
+        {
+            ClassName = "buildingSlot aid19 g15",
+            OuterHtml = "<div class='buildingSlot aid19 g15'>Main Building Level 20</div>",
+            NameText = "Main Building",
+            LevelText = "20",
+            OccupiedEvidence = true,
+        };
+        slots[20] = new BuildingOverviewSlotSnapshot
+        {
+            ClassName = "buildingSlot aid39 g16",
+            OuterHtml = "<div class='buildingSlot aid39 g16'>Rally Point Level 1</div>",
+            NameText = "Rally Point",
+            LevelText = "1",
+            OccupiedEvidence = true,
+        };
+
+        var scan = BuildingOverviewDomParser.Parse(slots);
+
+        Assert.Equal(CityStatus.City, scan.CityStatus);
+        Assert.Contains(43, scan.Buildings.Keys);
+    }
+
+    [Fact]
+    public void Parse_WaterworksGid_UsesBuildingNameAndLevel()
+    {
+        var scan = BuildingOverviewDomParser.Parse(
+        [
+            new BuildingOverviewSlotSnapshot
+            {
+                ClassName = "buildingSlot a43 g45 aid43 egyptian",
+                OuterHtml = "<div class='buildingSlot a43 g45 aid43 egyptian' data-aid='43' data-gid='45' data-name='Waterworks'><a class='level underConstruction' data-level='3'><div class='labelLayer'>3</div></a></div>",
+                DataNameText = "Waterworks",
+                DataLevelText = "3",
+                OccupiedEvidence = true,
+            },
+        ]);
+
+        var waterworks = Assert.Single(scan.Buildings).Value;
+        Assert.Equal("Waterworks", waterworks.BuildingName);
+        Assert.Equal(45, BuildingOverviewDomParser.ParseGidFromBuildingCode(waterworks.BuildingCode));
+        Assert.Equal(3, waterworks.Level);
     }
 }

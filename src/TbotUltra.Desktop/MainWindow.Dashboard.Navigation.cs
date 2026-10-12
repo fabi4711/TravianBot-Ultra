@@ -38,6 +38,7 @@ public partial class MainWindow
                 {
                     RefreshFarmListsItemsControl();
                     SyncFarmingControlsEnabledState();
+                    TickFarmListCountdowns();
                     UpdateNextFarmListSendDisplay();
                 }
                 else if (ReferenceEquals(targetTab, DashboardTabItem))
@@ -49,6 +50,10 @@ public partial class MainWindow
                 {
                     _resourcesViewModel.TickLiveForecasts();
                     TickResourceTransferVillageForecasts();
+                }
+                else if (ReferenceEquals(targetTab, BuildingsTabItem))
+                {
+                    RefreshDemolishStatusForSelectedVillage();
                 }
                 else if (ReferenceEquals(targetTab, TroopsTabItem))
                 {

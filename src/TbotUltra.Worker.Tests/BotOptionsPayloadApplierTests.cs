@@ -724,9 +724,9 @@ public sealed class BotOptionsPayloadApplierTests
 
         Assert.True(options.ConstructFasterEnabled);
         Assert.True(options.ConstructFasterMinBuildTimeEnabled);
-        Assert.Equal(30, options.ConstructFasterMinBuildMinutes);
-        Assert.False(options.ConstructFasterRandomEnabled);
-        Assert.Equal(50, options.ConstructFasterRandomChancePercent);
+        Assert.Equal(45, options.ConstructFasterMinBuildMinutes);
+        Assert.True(options.ConstructFasterRandomEnabled);
+        Assert.Equal(80, options.ConstructFasterRandomChancePercent);
     }
 
     [Fact]

@@ -265,6 +265,15 @@ public static class AccountStoragePaths
             $"{NormalizeServerKey(serverUrl)}.json");
     }
 
+    public static string WatchtowerSnapshotPath(string projectRoot, string accountName, string? serverUrl = null)
+    {
+        return Path.Combine(
+            AccountDirectory(projectRoot, accountName),
+            "cache",
+            "watchtowers",
+            $"{NormalizeServerKey(serverUrl)}.json");
+    }
+
     public static string HeroOintmentAvailabilityPath(string projectRoot, string accountName, string? serverUrl = null)
     {
         return Path.Combine(
@@ -312,5 +321,10 @@ public static class AccountStoragePaths
     public static string FarmListDispatchStatePath(string projectRoot, string accountName)
     {
         return Path.Combine(projectRoot, "temp_build_out", "farmlist-dispatch-state", $"{NormalizeAccountKey(accountName)}.json");
+    }
+
+    public static string FarmListHistoryPath(string projectRoot, string accountName, string? serverUrl)
+    {
+        return Path.Combine(AccountDirectory(projectRoot, accountName), "farm-list-history", $"{NormalizeServerKey(serverUrl)}.json");
     }
 }

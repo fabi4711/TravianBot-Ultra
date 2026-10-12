@@ -68,7 +68,8 @@ internal static class ConstructionRequirementRepairPlanner
             return new ConstructionRequirementRepairPlan([], [], []);
         }
 
-        var state = RepairState.From(status, sameVillageQueueItems, now);
+        // The context excludes the task being repaired, but its chosen slot still belongs to it.
+        var state = RepairState.From(status, [.. sameVillageQueueItems, parent], now);
         var steps = new List<ConstructionRequirementRepairStep>();
         var waitReasons = new List<string>();
         var blockers = new List<string>();
@@ -218,7 +219,52 @@ internal static class ConstructionRequirementRepairPlanner
                     return;
                 }
 
-                var slotId = ResolveConstructSlot(gid, state);
+                var reservedUpgradeSlots = queueItems
+                    .Where(item => item.Status == QueueStatus.Pending)
+                    .Where(item => string.Equals(item.TaskName, "upgrade_building_to_level", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(item.TaskName, "upgrade_building_to_max", StringComparison.OrdinalIgnoreCase))
+                    .Select(item => BuildingUpgradePayload.TryFromDictionary(item.Payload, out var upgrade) ? upgrade : null)
+                    .Where(upgrade => upgrade is not null && NameMatches(upgrade.Name, name))
+                    .Select(upgrade => upgrade!.SlotId)
+                    .Distinct()
+                    .ToList();
+                if (reservedUpgradeSlots.Count > 1)
+                {
+                    blockers.Add($"multiple queued {name} upgrade slots ({string.Join(", ", reservedUpgradeSlots)}) make the intended construct slot ambiguous");
+                    return;
+                }
+
+                int? slotId;
+                if (reservedUpgradeSlots.Count == 1)
+                {
+                    var reservedSlot = reservedUpgradeSlots[0];
+                    var validBuildingSlot = gid == 16
+                        ? reservedSlot == RallyPointSlotId
+                        : WallGids.Contains(gid)
+                            ? reservedSlot == WallSlotId
+                            : BuildingSlotPolicy.OrdinarySlots(state.CityStatus).Contains(reservedSlot);
+                    var conflictingQueueItem = queueItems.Any(item =>
+                        ConstructionQueueState.IsActiveQueueStatus(item.Status)
+                        && ((string.Equals(item.TaskName, "construct_building", StringComparison.OrdinalIgnoreCase)
+                                && BuildingConstructPayload.TryFromDictionary(item.Payload, out var otherConstruct)
+                                && otherConstruct is not null
+                                && otherConstruct.SlotId == reservedSlot)
+                            || (string.Equals(item.TaskName, "demolish_building_to_level", StringComparison.OrdinalIgnoreCase)
+                                && item.Payload.TryGetValue(BotOptionPayloadKeys.TargetBuildingSlotOrName, out var demolishSlot)
+                                && int.TryParse(demolishSlot, out var occupiedSlot)
+                                && occupiedSlot == reservedSlot)));
+                    if (!validBuildingSlot || conflictingQueueItem)
+                    {
+                        blockers.Add($"queued {name} upgrade reserves slot {reservedSlot}, but that slot conflicts with another queued construct or is invalid");
+                        return;
+                    }
+
+                    slotId = reservedSlot;
+                }
+                else
+                {
+                    slotId = ResolveConstructSlot(gid, state);
+                }
                 if (slotId is null)
                 {
                     blockers.Add($"no free building slot is available for {name}");
@@ -226,6 +272,14 @@ internal static class ConstructionRequirementRepairPlanner
                 }
 
                 var payload = new BuildingConstructPayload(slotId.Value, gid, name, targetLevel).ToDictionary();
+                if (reservedUpgradeSlots.Count == 1 && !state.CanReuseQueuedConstructSlot(slotId.Value, gid))
+                {
+                    // Keep the original slot as the source so the existing live-slot rebind can move
+                    // dependent upgrades if Worker confirms a safe fallback slot.
+                    payload[BotOptionPayloadKeys.BuildingConstructAllowSlotFallback] = bool.TrueString;
+                    payload[BotOptionPayloadKeys.BuildingConstructFallbackExcludedSlots] =
+                        string.Join(",", state.BlockedSlots.Where(slot => slot != slotId.Value).OrderBy(slot => slot));
+                }
                 steps.Add(new ConstructionRequirementRepairStep(
                     ConstructionRequirementRepairStepKind.Enqueue,
                     null,
@@ -405,7 +459,7 @@ internal static class ConstructionRequirementRepairPlanner
             return state.IsSlotFreeForNewConstruct(WallSlotId, gid) ? WallSlotId : null;
         }
 
-        return Enumerable.Range(19, 20)
+        return BuildingSlotPolicy.OrdinarySlots(state.CityStatus)
             .FirstOrDefault(slotId => state.IsSlotFreeForNewConstruct(slotId, gid)) is int slot && slot > 0
                 ? slot
                 : null;
@@ -419,7 +473,8 @@ internal static class ConstructionRequirementRepairPlanner
         out string reason)
     {
         reason = string.Empty;
-        if (!BuildingCatalogService.CanConstructInVillage(gid, status.IsCapital, out reason))
+        if (!BuildingCatalogService.CanConstructInVillage(
+                gid, status.IsCapital, status.Tribe, status.CityCapability, status.CityStatus, out reason))
         {
             return false;
         }
@@ -508,17 +563,23 @@ internal static class ConstructionRequirementRepairPlanner
         private readonly List<ActiveConstruction> _activeConstructions;
         private readonly List<PlannedResourceField> _resourceFields = [];
 
-        private RepairState(IReadOnlyList<ActiveConstruction> activeConstructions)
+        private RepairState(IReadOnlyList<ActiveConstruction> activeConstructions, CityStatus cityStatus)
         {
             _activeConstructions = activeConstructions.ToList();
+            CityStatus = cityStatus;
         }
+
+        public CityStatus CityStatus { get; }
+        public IReadOnlyCollection<int> BlockedSlots => _blockedSlots;
 
         public static RepairState From(
             VillageStatus status,
             IReadOnlyList<QueueItem> queueItems,
             DateTimeOffset now)
         {
-            var state = new RepairState(ConstructionQueueState.ResolveCurrentActiveConstructions(status, now));
+            var state = new RepairState(
+                ConstructionQueueState.ResolveCurrentActiveConstructions(status, now),
+                status.CityStatus);
             foreach (var building in status.Buildings)
             {
                 if (building.SlotId is not int slotId)

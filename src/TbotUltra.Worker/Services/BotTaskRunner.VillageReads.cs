@@ -476,7 +476,9 @@ public sealed partial class BotTaskRunner
                 log($"Reading buildings status for server {options.ServerName}.");
                 await client.LoginAsync(cancellationToken);
                 await TrySwitchToTargetVillageAsync(client, options, log, cancellationToken);
-                status = await client.ReadBuildingsStatusAsync(cancellationToken);
+                status = await client.ReadBuildingsStatusAsync(
+                    refreshWatchtowerStatus: true,
+                    cancellationToken);
             });
 
         return status ?? throw new InvalidOperationException("Could not read buildings status.");
@@ -505,6 +507,34 @@ public sealed partial class BotTaskRunner
         return status ?? throw new InvalidOperationException("Could not read current Dorf2 status.");
     }
 
+    public async Task<VillageStatus> ReadTargetBuildingOverviewStatusAsync(
+        BotOptions options,
+        Action<string> log,
+        string? villageName,
+        string? villageUrl,
+        string? accountName = null,
+        CancellationToken cancellationToken = default)
+    {
+        VillageStatus? status = null;
+        await ExecuteWithClientAsync(
+            options,
+            log,
+            accountName,
+            interactive: false,
+            cancellationToken,
+            async client =>
+            {
+                log($"Reading target Dorf2 status for village '{villageName ?? villageUrl ?? "-"}' without a Dorf1 status read.");
+                await client.LoginAsync(cancellationToken);
+                await TrySwitchToTargetVillageAsync(
+                    client, options, log, cancellationToken, villageName, villageUrl);
+                status = await client.ReadBuildingOverviewStatusAsync(cancellationToken);
+            },
+            saveStateMode: BrowserStateSaveMode.Skip);
+
+        return status ?? throw new InvalidOperationException("Could not read target Dorf2 status.");
+    }
+
     public async Task NavigateToVillageResourceFieldsAsync(
         BotOptions options,
         Action<string> log,
@@ -525,6 +555,28 @@ public sealed partial class BotTaskRunner
                 await TrySwitchToTargetVillageAsync(client, options, log, cancellationToken, villageName, villageUrl);
                 await client.NavigateToResourceFieldsAsync(cancellationToken);
             });
+    }
+
+    public async Task<bool> TryParkOnDorf2IfOnDorf1Async(
+        BotOptions options,
+        Action<string> log,
+        DateTimeOffset? nextTaskAtUtc,
+        string? accountName = null,
+        CancellationToken cancellationToken = default)
+    {
+        var parked = false;
+        await ExecuteWithClientAsync(
+            options,
+            log,
+            accountName,
+            interactive: false,
+            cancellationToken,
+            async client =>
+            {
+                await client.LoginAsync(cancellationToken);
+                parked = await client.ParkOnBuildingsPageIfOnResourcesAsync(nextTaskAtUtc, cancellationToken);
+            });
+        return parked;
     }
 
     // Reloads the page the browser is currently on (no navigation), used by the continuous loop's

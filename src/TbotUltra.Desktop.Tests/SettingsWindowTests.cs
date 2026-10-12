@@ -22,6 +22,27 @@ public sealed class SettingsWindowTests : IDisposable
     }
 
     [Fact]
+    public void ShowWindowForTest_KeepsSettingsOffscreenAndInactive()
+    {
+        _wpf.Run(() =>
+        {
+            var window = new SettingsWindow(CreateStore(new JsonObject()));
+            try
+            {
+                ShowWindowForTest(window);
+
+                Assert.False(window.ShowInTaskbar);
+                Assert.False(window.ShowActivated);
+                Assert.True(window.Left + window.ActualWidth <= SystemParameters.VirtualScreenLeft);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void CelebrationsCategory_LoadsTownHallControlsAndRequestedTab()
     {
         _wpf.Run(() =>
@@ -119,6 +140,191 @@ public sealed class SettingsWindowTests : IDisposable
                     .OfType<ComboBoxItem>()
                     .Select(item => item.Content?.ToString() ?? string.Empty)
                     .ToArray());
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void GeneralCategory_TaskPriorityIsDraftedUntilSaveAndCanReset()
+    {
+        _wpf.Run(() =>
+        {
+            var store = CreateStore(new JsonObject());
+            var window = new SettingsWindow(
+                store,
+                initialCategory: SettingsCategory.General,
+                taskPriorityEnabledGroups: ["construction"]);
+            try
+            {
+                ShowWindowForTest(window);
+                DrainDispatcher();
+                Assert.IsType<ItemsControl>(window.FindName("TaskPriorityList"));
+                var automationSection = Assert.IsType<Border>(window.FindName("PostLoginAutomationSection"));
+                var prioritySection = Assert.IsType<Border>(window.FindName("TaskPrioritySection"));
+                var settingsSections = Assert.IsType<StackPanel>(prioritySection.Parent);
+                Assert.Equal(settingsSections.Children.IndexOf(automationSection) + 1,
+                    settingsSections.Children.IndexOf(prioritySection));
+                var infoIcon = Assert.IsType<ContentControl>(window.FindName("TaskPriorityInfoIcon"));
+                Assert.Contains("Top groups run first", Assert.IsType<string>(infoIcon.ToolTip));
+                var rows = window.SettingsVm.TaskPriority.Rows;
+                Assert.Equal("hero", rows[0].Key);
+                Assert.False(rows[0].IsAutomationEnabled);
+                Assert.True(rows[1].IsAutomationEnabled);
+
+                window.SettingsVm.TaskPriority.MoveUpCommand.Execute(rows[1]);
+                Assert.Equal("construction", rows[0].Key);
+                Assert.True(window.SettingsVm.IsDirty);
+                Assert.Null(store.Load()["continuous_loop_group_order"]);
+
+                Assert.True(window.TryBuildNormalizedConfigDraft(out var draft));
+                Assert.Equal("construction", draft["continuous_loop_group_order"]![0]!.ToString());
+
+                window.SettingsVm.TaskPriority.ResetToDefault();
+                Assert.Equal("hero", rows[0].Key);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void GeneralCategory_SavesTaskPriorityForOnlyActiveAccount()
+    {
+        _wpf.Run(() =>
+        {
+            Directory.CreateDirectory(_root);
+            var configPath = Path.Combine(_root, "bot.json");
+            File.WriteAllText(configPath, new JsonObject().ToJsonString());
+            var activeAccount = "alice";
+            var store = new BotConfigStore(configPath, _root, () => activeAccount);
+            var window = new SettingsWindow(store, taskPriorityEnabledGroups: ["construction"]);
+            WpfSmokeFixture.PrepareOffscreen(window);
+            window.ContentRendered += (_, _) =>
+            {
+                window.SettingsVm.TaskPriority.MoveUpCommand.Execute(window.SettingsVm.TaskPriority.Rows[1]);
+                window.SettingsVm.SaveCommand.Execute(null);
+            };
+
+            Assert.True(window.ShowDialog());
+            Assert.Equal("construction", store.Load()["continuous_loop_group_order"]![0]!.ToString());
+            activeAccount = "bob";
+            Assert.Null(store.Load()["continuous_loop_group_order"]);
+        });
+    }
+
+    [Fact]
+    public void GeneralCategory_WithoutAccountDoesNotWriteGlobalTaskPriority()
+    {
+        _wpf.Run(() =>
+        {
+            var store = CreateStore(new JsonObject());
+            var window = new SettingsWindow(store, taskPriorityAccountAvailable: false);
+            try
+            {
+                ShowWindowForTest(window);
+                DrainDispatcher();
+                Assert.False(window.SettingsVm.TaskPriority.IsEditable);
+                Assert.True(window.TryBuildNormalizedConfigDraft(out var draft));
+                Assert.Null(draft["continuous_loop_group_order"]);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void PacingCategory_LoadsIdleDorf2ParkingSettingAndTooltip()
+    {
+        _wpf.Run(() =>
+        {
+            var store = CreateStore(new JsonObject
+            {
+                [BotOptionPayloadKeys.ParkOnDorf2WhileIdle] = true,
+            });
+            var window = new SettingsWindow(store, initialCategory: SettingsCategory.Pacing);
+            try
+            {
+                var checkBox = Assert.IsType<CheckBox>(window.FindName("ParkOnDorf2WhileIdleCheckBox"));
+                var infoIcon = Assert.IsType<ContentControl>(window.FindName("ParkOnDorf2WhileIdleInfoIcon"));
+
+                Assert.True(window.SettingsVm.Pacing.ParkOnDorf2WhileIdle);
+                Assert.Equal("Park on Dorf2 during automation", checkBox.Content);
+                Assert.Equal(
+                    "During active automation, stay on Dorf1 when there are no incoming or outgoing troop movements, or when the next task starts at least 20 seconds before the next movement. Move to Dorf2 when a movement may refresh Dorf1 before that safe margin. Other pages are left unchanged; paused or stopped automation does not move.",
+                    infoIcon.ToolTip);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void PacingCategory_ShowsSmartSleepRecommendation()
+    {
+        _wpf.Run(() =>
+        {
+            var window = new SettingsWindow(
+                CreateStore(new JsonObject()),
+                initialCategory: SettingsCategory.Pacing);
+            try
+            {
+                var badge = Assert.IsType<Border>(window.FindName("SmartSleepRecommendedBadge"));
+                var label = Assert.IsType<TextBlock>(badge.Child);
+
+                Assert.Equal("Recommended", label.Text);
+                Assert.Equal(HorizontalAlignment.Right, badge.HorizontalAlignment);
+                Assert.Equal(VerticalAlignment.Top, badge.VerticalAlignment);
+                Assert.True(window.SettingsVm.Pacing.SmartSleepEnabled);
+                Assert.False(window.SettingsVm.Pacing.SessionPacingEnabled);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void PacingCategory_ShowsEnabledMaxRuntimeWithMinuteInputs()
+    {
+        _wpf.Run(() =>
+        {
+            var window = new SettingsWindow(
+                CreateStore(new JsonObject()),
+                initialCategory: SettingsCategory.Pacing);
+            try
+            {
+                var enabled = Assert.IsType<CheckBox>(window.FindName("SmartSleepMaxRuntimeCheckBox"));
+                var online = Assert.IsType<TextBox>(window.FindName("SmartSleepMaxRuntimeTextBox"));
+                var sleep = Assert.IsType<TextBox>(window.FindName("SmartSleepMaxRuntimeSleepTextBox"));
+                var variation = Assert.IsType<ComboBox>(window.FindName("SmartSleepMaxRuntimeVariationComboBox"));
+
+                Assert.True(enabled.IsChecked);
+                Assert.Equal("120", online.Text);
+                Assert.Equal("20", sleep.Text);
+                Assert.Equal(20, window.SettingsVm.Pacing.SmartSleepMaxRuntimeVariationPercent);
+                Assert.Equal(6, variation.Items.Count);
+                Assert.Equal(1, Grid.GetRow(variation));
+                Assert.Equal(2, Grid.GetColumn(variation));
+
+                var upperInput = Assert.IsType<TextBox>(window.FindName("SmartSleepMinimumOpportunityTextBox"));
+                var upperGrid = Assert.IsType<Grid>(upperInput.Parent);
+                var runtimeGrid = Assert.IsType<Grid>(online.Parent);
+                var runtimeSection = Assert.IsType<StackPanel>(runtimeGrid.Parent);
+                Assert.Equal(upperGrid.Margin.Left, runtimeSection.Margin.Left + runtimeGrid.Margin.Left);
+                Assert.Equal(upperGrid.ColumnDefinitions[0].Width, runtimeGrid.ColumnDefinitions[0].Width);
+                Assert.Equal(upperGrid.ColumnDefinitions[1].Width, runtimeGrid.ColumnDefinitions[1].Width);
+                Assert.Same(runtimeGrid, sleep.Parent);
             }
             finally
             {
@@ -275,7 +481,8 @@ public sealed class SettingsWindowTests : IDisposable
                 [BotOptionPayloadKeys.SessionPacingDailyMaxHours] = 1,
             });
             var shownTitles = new List<string>();
-            using var dialogCloser = CaptureDialogs(shownTitles);
+            var dialogsOnScreen = new List<bool>();
+            using var dialogCloser = CaptureDialogs(shownTitles, dialogsOnScreen);
             var window = new SettingsWindow(store);
             try
             {
@@ -299,6 +506,7 @@ public sealed class SettingsWindowTests : IDisposable
 
                 Assert.Equal(2, shownTitles.Count(title => title == "Daily runtime warning"));
                 Assert.Contains("Enable detailed browser logging?", shownTitles);
+                Assert.DoesNotContain(true, dialogsOnScreen);
             }
             finally
             {
@@ -316,19 +524,14 @@ public sealed class SettingsWindowTests : IDisposable
         return store;
     }
 
-    private static IDisposable CaptureDialogs(ICollection<string> shownTitles)
+    private static IDisposable CaptureDialogs(ICollection<string> shownTitles, ICollection<bool>? dialogsOnScreen = null)
     {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(10) };
-        timer.Tick += (_, _) =>
+        AppDialog.BeforeModalShowForTests = dialog =>
         {
-            foreach (var dialog in Application.Current.Windows.OfType<AppDialog>().ToList())
-            {
-                shownTitles.Add(dialog.Title);
-                dialog.Close();
-            }
+            shownTitles.Add(dialog.Title);
+            dialogsOnScreen?.Add(dialog.IsVisible);
         };
-        timer.Start();
-        return new DisposableAction(timer.Stop);
+        return new DisposableAction(() => AppDialog.BeforeModalShowForTests = null);
     }
 
     private static void DrainDispatcher()
@@ -342,8 +545,7 @@ public sealed class SettingsWindowTests : IDisposable
 
     private static void ShowWindowForTest(Window window)
     {
-        window.ShowInTaskbar = false;
-        window.Opacity = 0;
+        WpfSmokeFixture.PrepareOffscreen(window);
         window.Show();
     }
 

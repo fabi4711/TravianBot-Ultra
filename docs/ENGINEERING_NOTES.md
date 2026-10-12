@@ -1,6 +1,6 @@
 # Engineering Notes
 
-Last updated: 2026-10-01
+Last updated: 2026-10-12
 
 Read this file before changing architecture, selectors, paths, browser behavior, persisted state, queueing,
 or server logic. Keep it short and current: durable rules belong here; detailed decisions belong in ADRs;
@@ -29,6 +29,12 @@ The solution uses no optional .NET workloads. Keep `MSBuildEnableWorkloadResolve
 and test commands so a partial machine-wide workload installation cannot block the Desktop project.
 The local SDK also requires disabled build servers and a serial solution build; use the commands above
 or the repository verification scripts rather than a plain parallel `dotnet build`.
+Automated tests must run without visible windows whenever possible. WPF smoke tests that need `Loaded`,
+`ContentRendered`, or dialogs must use off-screen, non-activating windows rather than flashing UI on the desktop.
+The development VBS launcher gates changed app/test/launcher sources on a Release solution build and both CI test
+projects before opening the UI. Failed checks block new launches and show a dialog with the failing test and
+local preflight log path; an already-running app is left untouched. A passing source stamp avoids repeating
+unchanged checks on every launch.
 
 Published artifacts belong under `artifacts/`, never beside source files.
 
@@ -59,7 +65,28 @@ Published artifacts belong under `artifacts/`, never beside source files.
   server-added parameters may be extra. Never identify all `/build.php` URLs as the same slot.
 - Common paths are `/dorf1.php`, `/dorf2.php`, `/build.php?id={slot}`, `/karte.php`, `/berichte.php`, and
   `/messages.php`.
+- Enter a resource field through the Dorf1 overview and a building through Dorf2; prefer their visible
+  links and the slot's live click target. If the exact slot remains visible but no click target is
+  actionable, a direct `build.php` URL is an alarmed compatibility fallback; never use it when the slot
+  itself is absent. A Travian `reload=auto` can temporarily hide overview links and slots: wait for a
+  settled overview with a bounded retry before declaring absence. If repeated Dorf1 reloads prevent the
+  visible Dorf2 link from opening, a bounded read-only Dorf2 navigation may recover only after the active
+  village coordinates were captured, and must verify the same coordinates and a usable shell afterward.
+  After a failed slot click, confirm the
+  browser is still on that overview before trying another layer; never click through to a different slot.
+  If Playwright times out after dispatching a slot click, wait briefly for the exact target URL and defer
+  if its outcome stays uncertain; do not click another layer. A concave wall SVG needs a hit-tested point
+  on the exact slot path, since its bounding-box center may belong to another overlay. Dispatch that wall
+  click at the verified viewport coordinate; locator-relative SVG positions can hit the overlay instead.
+  A verified exact-slot URL fallback remains visible in Alarms as auto-acknowledged; candidate click
+  failures alone are diagnostics, while an unverified fallback remains an actionable failure.
+  Reuse an already valid target page. Construction affordability may read stock and
+  capacity on the current page; visit Dorf1 only when production is needed to resolve a resource
+  shortfall or the visible stock is incomplete.
 - Scope selectors to the relevant Official page, widget, dialog, row, or building contract.
+- Before treating the Official sidebar village list as complete or resolving a village switch target from it,
+  expand every collapsed village group with its scoped group action and verify the rendered expanded state.
+  A failed expansion must never produce an authoritative partial village list.
 - Prefer stable attributes and semantic structure over generated class names.
 - Selector changes are additive only for verified Official DOM variants. Do not add broad legacy fallbacks or
   replace a verified selector without evidence.
@@ -94,6 +121,11 @@ Published artifacts belong under `artifacts/`, never beside source files.
   village-scoped; runtime snapshots are Worker-owned observations, not user configuration.
 - Per-village automation-group toggles have one persisted authority. Every write must immediately synchronize
   the matching Dashboard card and Village settings row; neither view may retain a private toggle state.
+- Village task priority is an account-scoped order edited only in Settings > General. Dashboard displays the
+  same relative group order but never writes it; toggle changes must not overwrite it. Selection applies the
+  order within each village, skips groups that are not ready, and preserves urgent/manual-immediate work and
+  each group's own queue order. An untouched legacy Dashboard order resolves to the new default, while a
+  customized legacy order stays intact.
 - `BotOptionsFactory` and `BotOptionsPayloadApplier` are public orchestration facades. Domain option modules own
   their defaults, compatibility normalization, payload overlay, and projection to the flat `BotOptions` record;
   do not duplicate a domain rule in either facade. Domain modules also declare their account-scoped keys, which
@@ -132,8 +164,11 @@ Published artifacts belong under `artifacts/`, never beside source files.
   against each real target village when queueing. For buildings that allow multiple instances, ascending Auto rows
   continue the most recent compatible instance while an equal or lower target starts another instance; repeated
   explicit slots remain the same instance. Conditional duplicates may use an earlier row's projected max-level
-  upgrade to satisfy their duplicate threshold. The Official internal-building set is Warehouse, Granary, Cranny,
-  Great Warehouse, and Great Granary; the Great variants remain unavailable until their plan/WW eligibility can be
+  upgrade to satisfy their duplicate threshold. Automatic prerequisite repair must prefer the slot reserved by a
+  pending matching upgrade and must not steal the parent construct's slot; an actually occupied target may use the
+  existing safe fallback with dependent queue rows rebound to the effective slot. The Official internal-building
+  set is Warehouse, Granary, Cranny, Great Warehouse, and Great Granary; the Great variants remain unavailable until
+  their plan/WW eligibility can be
   verified without guessing. Multi-village template queueing never navigates to fill missing
   snapshots; unavailable targets remain unselected, existing active village queue work is projected first, storage
   additions are confirmed once across all selected villages, and the final cross-village insert is atomic.
@@ -143,6 +178,11 @@ Published artifacts belong under `artifacts/`, never beside source files.
 - Roman construction priority is an account-scoped Construction setting. It applies to every Roman village;
   Village settings must not expose a separate per-village priority control.
 - Smart Sleep's account-scoped `Wake when construction queue clears` option changes only its wake deadline.
+  Its optional account-scoped max-runtime cap is on by default (120 minutes online, 20 minutes asleep).
+  A varied active-automation timer may request
+  sleep despite ready work; stop new tasks, finish the current action without cancellation, then start its own
+  varied sleep duration from actual browser shutdown. This duration is independent of minimum idle opportunity;
+  explicit pauses and manual functions freeze the timer, while allowed hours and Daily max remain hard limits.
   With confirmed Plus overview data, a queued pair uses the final timer; Roman resource and building queues
   are evaluated separately. Normal online construction scheduling always keeps the earliest-slot behavior.
   Trusted deadlines within a randomized 10-15 minute coalescing window remain in the current online session.
@@ -188,6 +228,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   shared browser. Every normal main context also installs CMP UI suppression at document start, before its visible
   page is created; manual lobby authentication can otherwise prime an in-page consent overlay that is recreated
   during later read-only status passes. Bonus videos remain isolated in their separate browser context.
+- After a `Choose in lobby` login resolves a game world, isolated bonus-video clients must use the
+  browser session's verified game-world origin for navigation; the original account options may still
+  contain the lobby URL even though the main browser is on the game world.
 - An account's optional display name is local presentation only; authentication continues to use the lobby email.
   The internal account key is immutable after creation. New accounts allocate a unique key atomically, including
   when the same email has multiple pending `Choose in lobby` worlds, and resolving a lobby world never renames it.
@@ -203,6 +246,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   form draft and remains unsaved until the user uses the normal Settings Save action.
 - Embedded Village settings have no Save step: persist each row or group-toggle change immediately; bulk
   "Check all" changes persist each affected row and publish one consolidated settings-changed notification.
+- New villages default to Auto, Construction, Hero, and Construct 25% faster ON. New Construct faster settings
+  default to Min build time ON at 45 minutes and Random ON at 80%; preserve explicit saved choices and legacy
+  villages' missing group selections.
 - Farming requires confirmed active Gold Club. Dashboard and Village settings must project Farming as OFF and
   non-clickable when Gold Club is false or unknown, and execution gating must enforce the same rule.
 - Troop training has three amount modes: Maximum, Keep resources, and Random range. A finite max-queue setting
@@ -210,8 +256,14 @@ Published artifacts belong under `artifacts/`, never beside source files.
 - `FarmListsWorkflow` owns Farm Lists analysis plus projection, snapshot restore, create/add completion refresh,
   dispatch reconciliation, and the complete pause/analyze/choose/create-or-select/resume transaction used by
   loss-destination setup. WPF may gather dialog input and render returned views, but must not order or recreate
-  those multi-step operations. Travian's `Send all` action is account-global and must have at most one active
-  runtime queue item regardless of village count; its normal configured dispatch interval still controls retries.
+  those multi-step operations. The Farming panel is account-global: changing the selected village must never replace
+  its rows, enabled state, or timers from a village-status cache; only the workflow's account snapshot/projection may
+  replace that view. The account-wide `Send all enabled` mode must have at most one active runtime queue item
+  regardless of village count; its normal configured dispatch interval still controls retries. Dispatch eligibility
+  is account-wide: any enabled village with Farming on permits `send_farmlists`, regardless of the queue item's
+  legacy village metadata. The worker uses the current village or another owned Rally Point, not that metadata.
+  Farming countdowns derive from elapsed time so delayed UI pulses do not slow them. Refresh an open Farming History
+  view after confirmed sends; do not poll its persisted history every second.
 - Hero attribute automation uses account-scoped absolute maximums (0-100) keyed by attribute; missing or invalid
   values default to 100. Read the four live Official attribute inputs before every plus click, never cross a maximum,
   and do not requeue point spending when the latest complete snapshot shows every configured maximum is reached.
@@ -235,6 +287,11 @@ Published artifacts belong under `artifacts/`, never beside source files.
   the current page (including the global Hero control and active-village sidebar), never page-specific Dorf1/Dorf2
   content, and never navigates to Dorf1 merely to verify a session; an unresolved page is a transient read failure.
   Explicit user operations such as Login, scans, and refresh buttons remain allowed while automation is idle.
+- Dorf2 parking applies during active Continuous Loop and Auto Queue idle waits. On Dorf1, inspect the live
+  incoming and outgoing movement timers. Stay on Dorf1 when there are no movements or the next task starts
+  at least 20 seconds before the earliest movement; park on Dorf2 when a movement may refresh Dorf1 inside
+  that margin, its timer is unreadable, or no next task is known. Leave other pages and stopped/paused
+  automation untouched. Enabling the option wakes running automation to check at its next idle boundary.
 - The village status cache and queue use canonical coordinate keys. Legacy name-keyed entries are migrated only
   when coordinates can be resolved; active coordinates come from `#villageName[data-x][data-y]`.
 - Per-village runtime caches are shared by the UI and background loop and must be synchronized. A display-name
@@ -258,6 +315,10 @@ Published artifacts belong under `artifacts/`, never beside source files.
   the final target, survives slot fallback/reconciliation, and continues from level 1 through that target; templates,
   recovery, requirement repair, and storage preflight must not split this into separate construct/upgrade rows.
   Resource-field target upgrades likewise remain one queue item.
+- Template planning treats a live level-0 building as its existing level-1 instance only when the current authoritative
+  construction overview confirms a matching level-1 build (slot/GID, or an unambiguous name match when IDs are absent).
+  Then upgrade that same slot instead of attempting a duplicate; an unconfirmed level-0 building stays unbuilt.
+  Fresh authoritative construction rows must survive merging a building snapshot into the selected village's UI status.
 - Manual queue reordering persists atomically through `CreatedAt` and therefore controls FIFO selection in both Auto
   Queue and Continuous Loop. Extended row selection supports Ctrl/Shift; one move requires one group and priority,
   preserves selected order, and moves only the selected village's visible rows while hidden villages keep their
@@ -313,6 +374,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
 - Raising or disabling Daily max while sleeping for the old daily limit must re-evaluate the restriction immediately.
   If the recorded runtime is below the new limit and Allowed hours permit running, wake with zero added sleep delay.
 - Known queue deadlines are authoritative and may not be shortened by pacing.
+- Construction and resource-field defers must persist their reason with their deadline in one queue update.
+  A live queue-full refresh may change the deadline only if the persisted reason is still `queue_full`;
+  a stale status snapshot must never release a newer resource wait.
 - Smart Sleep and Session pacing are mutually exclusive account modes, though both may be disabled. Smart Sleep may
   close the browser only at a safe automation boundary when a user-selected queue-group deadline provides enough idle
   time; scheduled Village Scan and Keep Alive maintenance must not wake it. Its saved wake uses the configured
@@ -326,6 +390,8 @@ Published artifacts belong under `artifacts/`, never beside source files.
   activates the first prepared tab
   and requires explicit `Send now` confirmation. Only the final confirmation burst uses the explicitly selected
   50–500 ms delay without general action pacing; cancel sends nothing and temporary wave tabs are closed.
+- Read-only actionability and final-safety analysis must not apply click pacing. The method that performs the
+  state-changing click owns the single click-pacing delay; repeated safety reads remain unpaced.
 - Proxy settings are account-scoped. Browser, HTTP client, tests, and bonus video use the same effective route.
   Never log credentials or place them in user-visible URLs.
   Proxy library/finder entries carry username and password separately; migrate legacy inline Host credentials
@@ -339,6 +405,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   otherwise show its native authentication dialog or return `ERR_INVALID_AUTH_CREDENTIALS` for authenticated HTTP
   proxies; context credentials must answer the challenge without user input. Keep invalid-proxy and `NeverUseOwnIp`
   handling at browser launch so contexts can never introduce a direct-route fallback.
+  Proxy rotation schedules distinguish a typed Own IP route from an uncovered schedule gap. Legacy assignments
+  without a route type remain proxies. Own IP is selectable only when `NeverUseOwnIp` is off; validation, account
+  save, login, sleep wake, and recovery must preserve that distinction and never treat Own IP as a library proxy.
 - Proxy Finder and Proxy Library classify a proxy as reliable only after three consecutive neutral HTTPS probes
   and two consecutive Travian reachability probes. All five probes use fresh connections and the active cancellation
   token; a single failed probe rejects the proxy. Only HTTP 2xx/3xx responses count as usable; blocked, proxy-auth
@@ -506,6 +575,10 @@ Published artifacts belong under `artifacts/`, never beside source files.
 - Queue Active/History grids use star sizing with explicit per-column `MinWidth` and disabled user resizing in both
   the embedded panel and Pop out. A narrow viewport must scroll horizontally; never allow a header drag or an early
   hidden-tab measurement to collapse queued task columns into apparently blank rows.
+- Queue History is a construction log: include only terminal (`Succeeded`, `Failed`, or `Canceled`) items from the
+  `Construction` group. Display and sort it newest-first by terminal `UpdatedAt`, never by queue creation time. For
+  successful construction items this timestamp is written immediately after Travian confirms the build, before
+  post-success UI refresh; present it as `Started in Travian`.
 - The Incoming attacks grid follows the same constraint: every column has an explicit `MinWidth` and user resizing
   is disabled, so grouped attack rows remain readable and a narrow viewport scrolls instead of collapsing columns.
 - Enumerate mutable collections through immutable snapshots when sanitizing/exporting.
@@ -555,9 +628,14 @@ Published artifacts belong under `artifacts/`, never beside source files.
   A login-fill burst remains on the village until live status is 3/3 or the complementary lane is explicitly blocked.
   Other tribes preserve one strict construction order. An in-progress aggregate such as
   `upgrade_all_resources_to_level` remains the head of the Roman resource category until it is complete.
-- A confirmed empty overview gives the first stale resource `page_timer` head one immediate live validation so a
-  free slot cannot idle behind an obsolete timer. Hero inventory is never polled for this: only an observed inventory
-  increase wakes the first resource-deferred construction head per village; identical reads and transfer deductions do not.
+- A confirmed empty overview gives the first stale resource `page_timer` head one immediate live validation per
+  unchanged blocker snapshot so a free slot cannot idle behind an obsolete timer. The failed validation's return to
+  empty Dorf2 must never release its own new deadline. Repeated identical construction `page_timer` resource waits use
+  a persisted, jittered 1/2/5/10/20/30-minute backoff floor; it never shortens a longer authoritative server wait.
+  After the same wait repeats, generic Hero-inventory increases and full-resource observations must not bypass that
+  deadline. An explicit user reset or changed blocker starts a new validation cycle. Hero inventory is never polled:
+  before the repeated-wait guard activates, only an observed increase may wake the first resource-deferred construction
+  head per village; identical reads and transfer deductions do not.
 - A new resource-defer snapshot replaces the previous snapshot's costs, current stock, production and capacity fields.
   If the live page cannot expose new costs, never reuse old requirements to wake that `page_timer` early.
 - Construction follows visible per-village queue order subject to the Roman category rule above. A deferred head
@@ -623,6 +701,9 @@ Published artifacts belong under `artifacts/`, never beside source files.
   gid/name is absent village-wide. An incomplete or identity-ambiguous read defers without adding a construct.
 - Every village-status cache write for the same village must also replace the preferred UI building snapshot after
   partial-state merging; never let an older unknown-level snapshot override a newer live or merged read.
+- Persisted village-cache saves merge atomically with existing account entries: a pre-login partial
+  Watchtower/status observation must never replace the full village set or erase known Dorf1/Dorf2
+  layout for its own village. A corrupt existing cache must be logged, not silently overwritten.
 - Queued and direct `Load buildings` must both produce a full village status with Warehouse/Granary capacity. A
   dorf2 building snapshot must be merged with the same village's existing status, never replace it with null capacity.
 - Release smoke tests must wait on `ReleaseSmokeContract.ReadyLogMarker`, not logs from optional/removed startup work.
@@ -632,6 +713,12 @@ Published artifacts belong under `artifacts/`, never beside source files.
   rebinding. Tribe-incompatible choices remain disabled.
 - Catalog coverage is required for Romans, Teutons, Gauls, Egyptians, and Huns. Vikings are unsupported.
 - Detailed queue, storage, click, and estimate rules: [construction ADR](adr/2026-06-20-construction-queue.md).
+- Cities use explicit tri-state server/village knowledge; never allocate slots 41–43 or queue City-only work from `Unknown`. Probe the authenticated page's runtime feature flag first, then anonymous login HTML; a complete live dorf2 overview that confirms a City is also affirmative proof that the server supports Cities. An `Unknown` login probe or partial village read must not erase a prior confirmed City result. On quick re-login, a persisted coordinate-keyed Watchtower snapshot restores its confirmed City identity without revisiting the wall; an explicit live Village result still overrides it.
+- Watchtowers are a wall extension with an independent two-place queue and demand-driven wall navigation; they must not block ordinary construction. A successful level read is persisted per account/world/village and generic startup or village-status reads reuse it indefinitely. Only explicit Buildings load or Watchtower work refreshes the wall page. See [City/Watchtower ADR](adr/2026-10-07-city-capability-and-watchtower-queue.md).
+- Confirmed Watchtower queue observations update the selected village's Queue view immediately. A newer Watchtower observation must not be overwritten by an older village-status snapshot.
+- Construction affordability must be decided in Core from the embedded catalog and complete live current-page stock/capacity before opening `build.php`; Dorf2 stock is valid. Merge production from the village's coordinate-owned last Dorf1 observation, refresh it whenever Dorf1 is visited, and navigate to Dorf1 only when a missing rate is needed to calculate a real shortfall wait. A Hero-covered deficit does not need production. Only affordable, locally recoverable (Hero/NPC), or a due Hero revalidation offer may navigate; incomplete live data keeps the build-page fallback. Check live queue availability before navigating. Hero revalidation uses the exact build-page transfer dialog even when the last-known inventory is non-empty but insufficient. Start its persisted account/server cooldown only after a readable dialog or confirmed-empty response, never at preflight; an unreadable dialog gets a short retry without incrementing insufficient observations. Resource waits must not outlast the next permitted revalidation. Never visit the Hero inventory page for this check.
+- Construct requirement preflight reads a complete target Dorf2 overview directly after the verified village switch; it must not request a full Dorf1+Dorf2 village status merely to obtain building slots. Only an incomplete or unverified Dorf2 observation may use the full-status fallback.
+- Queue persistence must tolerate multi-second OneDrive/antivirus locks, use unique temporary files, and log the exact failed path/operation. Retain only the latest 250 succeeded runtime-history rows; task activity statistics remain in their separate journal.
 
 ## Current pitfalls
 
@@ -730,6 +817,8 @@ Published artifacts belong under `artifacts/`, never beside source files.
   attributes, and new-village startup until all three succeed; legacy account snapshots are already initialized.
   When its post-login snapshot already contains complete village status and startup did not navigate between villages,
   return to Dorf1 without re-reading Dorf1/Dorf2; retain the full refresh after incomplete analysis or a village switch.
+- Full post-login village status reads Dorf1 before Dorf2 and obtains buildings in that same pass. Do not open Dorf2
+  separately first just to pass a building list into the status read.
 - Browser activity statistics are account-scoped: lifetime counters persist; session counters do not.
 - Build troops `% resources` checkboxes use OR semantics: at least one resource must be selected, any selected
   resource at or above the percentage threshold releases training, and deferred waits use the earliest selected
@@ -751,8 +840,11 @@ Published artifacts belong under `artifacts/`, never beside source files.
   existing paced Train-button click remains the submit action after the shortcut succeeds.
 - An immediately following Build troops task may consume the prior complete village status once, for at most 20
   seconds, only while still on Dorf2 with the same coordinate key. A mismatch or stale snapshot falls back to the
-  normal Dorf1/Dorf2 read. A troop-building queue page may be reused for its candidate action when the exact slot URL
-  still matches and no stale-timer marker is present; the live DOM is still read before any click.
+  normal Dorf1/Dorf2 read. If that 20-second snapshot expired but the browser remains on a fresh, coordinate-matched
+  Dorf2, Build troops may instead re-read complete buildings and live stock there without visiting Dorf1; incomplete
+  overview, resources, tribe, or village identity still requires the full status read. A troop-building queue page may
+  be reused for its candidate action when the exact slot URL still matches and no stale-timer marker is present; the
+  live DOM is still read before any click.
 - Dashboard B/S/W troop indicators represent effective per-village Build troops configuration, never training
   queue activity: green means Auto + Build troops + that building toggle are enabled and the building exists;
   amber means effectively enabled but the building is missing or its status is unknown; muted means disabled.
@@ -765,24 +857,30 @@ Published artifacts belong under `artifacts/`, never beside source files.
   the exact selected send order.
 - Farm-list exact timers get a 5-15s render margin; unreadable disabled timers use an estimated 60s wait.
 - "Shared schedule" is the default farm-list send mode and appears before "Individual schedule" in the UI.
-  Both modes send only UI-enabled farm lists ONE AT A TIME via
+  `send_farmlists` is account-wide: do not switch to the queue item's village before dispatch.
+  Open the farm-list page from the current village. If its Rally Point is confirmed level 0,
+  try other owned villages once each and use the first that verifies the Official farm-list page;
+  do not construct a Rally Point during this fallback.
+  Every mode sends only UI-enabled farm lists ONE AT A TIME via
   `SendFarmListsSequentiallyAsync`: click each list's Start,
   then wait for that exact list's `.farmListStatus svg.success` or `svg.error` response before advancing.
   Either marker means Travian processed the Start request and the list is marked sent; the "being raided"
   counter and disabled Start state are not dispatch confirmation.
   The wait between clicks is the "Send farmlists" action pacing (`FarmListStepDelayMin/MaxSeconds`, default
-  1-4s, on the Settings pacing tab). "Send all" instead performs one click on Travian's
-  `button.startAllFarmLists` control, using the established real-click-with-JS-fallback flow, and ignores UI toggles.
-  It must wait for the same per-list success/error response for every list that was sendable before the click.
+  1-4s, on the Settings pacing tab). A newly discovered list defaults OFF, including when no saved
+  selection exists; stable `lid` selections take precedence over names. Never use Travian's global
+  Start-all control for automatic or manual UI sends because it bypasses disabled lists.
   In "Individual schedule", every list requires an account-scoped Min/Max interval keyed by stable `lid`.
   When a list has no valid saved pair, copy and persist `ContinuousFarmDispatchDelay` as its initial values;
   those values are then independent and empty/partial edits are invalid rather than a runtime fallback.
   Persist the randomly selected `NextSendAtUtc` with `LastSentAtUtc`, advance only confirmed sends, and reuse
   that deadline after restart. Runtime edits and successful manual sends recalculate from the latest successful
   dispatch and wake the existing farming task. "Shared schedule" ignores individual deadlines and uses the global
-  whole-round delay for enabled lists; "Send all" uses the same whole-round delay for every account list.
-  The Farm lists reset action copies the current global Min/Max default to every real list; the existing row-change
-  persistence then recalculates each saved individual deadline from its latest successful dispatch.
+  whole-round delay for enabled lists; "Send all" uses the same whole-round delay for enabled lists.
+  The reset icon beside Next send makes all list deadlines ready immediately without changing selection or intervals.
+  Each village header separately resets only that village's individual Min/Max intervals to Shared Interval after
+  confirmation, preserving existing NextSend deadlines. Confirmed sends (success or error marker) append account/server
+  scoped farm-list history; manual and automatic sends use the same store, retained for 30 days / 50,000 entries.
 - Farm-list rows dedupe/merge by stable `lid` (data-list), never by display name — two villages can hold
   same-named lists that a name key would collapse into one row/group. Rows are grouped in the UI by the owning
   `.villageWrapper` ordinal (read per analyze), not by name, so two villages that share a display name stay in
@@ -841,8 +939,13 @@ Published artifacts belong under `artifacts/`, never beside source files.
   exists. Successful point allocation invalidates memory and disk, and incomplete DOM reads never overwrite a valid
   snapshot. Hero HP uses the global SVG first and opens Attributes only when that live signal is unavailable.
 - Hero-away signals outrank a concurrently rendered stale home icon. Adventure dispatch confirmation may come from
-  the adventure result page or the fresh global Hero status after Travian redirects to Dorf1. The configured Hero
+  the adventure result page or the global `heroRunning` status on any current Official page after a bounded render
+  wait; visit Dorf1 once only when those signals stay ambiguous. The configured Hero
   restart delay also applies to the first ready observation after login, before navigating to Adventures.
+- Adventure navigation requires an explicit live Home observation from the active `.heroStatus > a` icon. Hidden
+  duplicate icons, missing DOM, parse failures, and unrelated text are Unknown rather than Home; retry the current
+  DOM once without navigation, then defer. Recheck immediately before the first Adventures navigation, with every
+  running, reinforcing, or scoped movement-timer signal taking precedence over a stale home signal.
 - Automatic ointment use is triggered only for a home, living Hero with an available adventure when HP reaches or
   falls below the configured adventure minimum. Identify the inventory item by Official Travian's `item106`
   contract (with `inventory_5` as a fixture-backed fallback), pace both clicks, and verify live HP after Use. A
@@ -888,9 +991,13 @@ Published artifacts belong under `artifacts/`, never beside source files.
 - One `activate_production_bonus` run is a contiguous four-resource batch: after its initial cooldown gate,
   attempt every resource found activatable before returning control to other automation. A failure or newly
   created internal video cooldown for one resource must not stop the remaining resources in that same batch.
-  Verify each attempted resource against a fresh canonical bonus-box read. An ambiguous unconfirmed result may
-  retry once; known typed failures keep their no-immediate-retry policy. After the batch, raise one actionable alarm
-  listing resources still unconfirmed, persist the final observed states, and let normal automation continue.
+  A completed isolated video already includes a canonical bonus-box reward observation and must not trigger a
+  redundant main-browser refresh. Verify only ambiguous results before their one permitted retry, then perform one
+  fresh canonical main-browser read after the complete batch. Known typed failures keep their no-immediate-retry
+  policy. After the batch, raise one actionable alarm listing resources still unconfirmed, persist the final
+  observed states, and let normal automation continue.
+  Initial production-bonus inspection reuses a healthy current Dorf1 page, dismisses the Advantages wizard locally,
+  and reloads only for the final post-batch observation or genuine incomplete-render recovery.
   Worker returns a typed `ProductionBonusOutcome`; human messages are diagnostic only and must never carry private
   state tokens. The Worker `ProductionBonusOperation` owns inspect/activate run intent and contiguous batch policy behind
   `IProductionBonusBrowser`; the Desktop `ProductionBonusOperation` owns deadline calculation, failure backoff, and timer
@@ -980,12 +1087,18 @@ Published artifacts belong under `artifacts/`, never beside source files.
   Village scan, but a disabled recurring scan remains disabled. Full slots retain their persisted queue-humanize extra
   so later navigation still waits for the effective deadline. Planned Smart/Session pacing sleep may wait for this
   round only up to its Pacing extension choice; varied allowed-hours and daily-max boundaries remain hard stops.
+  The final post-login village visit may satisfy the initial construction-status sync only with a complete,
+  coordinate-verified Dorf1/Dorf2 observation for that village (including all City slots when applicable).
+  An incomplete final visit or a newer sync request retains the full-read fallback; earlier villages must not
+  clear the global sync request.
 - Every target-specific live confirmation that a building or resource entered Travian's construction queue publishes
   that authoritative overview snapshot to Desktop immediately. Update the coordinate-owned village cache and green
   construction-slot icons before the enclosing Worker task finishes; retain the validated current-Dorf2 post-task
   read with full Dorf1+Dorf2 fallback as backup.
 - A buildings snapshot passed from Worker to Desktop retains the authoritative active-construction list. A newly
   identified building at live level 0 with target level 1 renders as `Level 0 (1)`, like an ordinary upgrade.
+  A resumed composite construct treats a matching level-0 building in its exact slot as already queued;
+  occupied build pages do not offer construction category tabs and must reach the occupancy guard first.
 - A complete live Dorf2 overview may reconcile a pending ordinary-slot construct whose requested slot was manually
   occupied by another building. Rebind the construct and its dependent upgrades atomically to the lowest confirmed
   empty slot 19-38. The selected construction queue head takes precedence over soft reservations from later pending

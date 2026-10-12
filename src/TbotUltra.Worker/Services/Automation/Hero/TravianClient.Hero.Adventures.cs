@@ -127,10 +127,6 @@ public sealed partial class TravianClient
         var activeAdventurePage = await IsHeroAdventureActivePageAsync(cancellationToken);
         var returnSeconds = await ReadAdventureReturnSecondsAsync(cancellationToken) ?? fallbackReturnFromDetail;
 
-        // Navigate back to dorf1 after the "To adventure" submit so we don't leave the page on the
-        // adventure result view (keeps the page fresh for the next hero status read).
-        await EnsureFreshDorf1ForHeroAsync(forceReload: false, cancellationToken);
-
         var quick = await ReadHeroQuickStatusAsync(
             allowDorf1Fallback: false,
             forceDorf1Reload: false,
@@ -142,6 +138,43 @@ public sealed partial class TravianClient
             quick.IsInVillage,
             quick.Status.IsDead,
             isReviving);
+
+        // The global heroRunning signal is available on every Official game page. Give React a
+        // brief chance to publish it before falling back to Dorf1 for an ambiguous result.
+        for (var attempt = 0; attempt < 3 && !dispatched; attempt++)
+        {
+            await Task.Delay(400, cancellationToken);
+            activeAdventurePage = await IsHeroAdventureActivePageAsync(cancellationToken);
+            quick = await ReadHeroQuickStatusAsync(
+                allowDorf1Fallback: false,
+                forceDorf1Reload: false,
+                cancellationToken);
+            isReviving = string.Equals(quick.Status.State, "Reviving", StringComparison.OrdinalIgnoreCase)
+                || quick.Status.ReviveRemainingSeconds is > 0;
+            dispatched = HeroStatusDecision.IsAdventureDispatchConfirmed(
+                activeAdventurePage,
+                quick.IsInVillage,
+                quick.Status.IsDead,
+                isReviving);
+        }
+
+        if (!dispatched)
+        {
+            Notify("[adventure] current-page dispatch status stayed ambiguous; checking fresh Dorf1 hero status once.");
+            await EnsureFreshDorf1ForHeroAsync(forceReload: false, cancellationToken);
+            quick = await ReadHeroQuickStatusAsync(
+                allowDorf1Fallback: false,
+                forceDorf1Reload: false,
+                cancellationToken);
+            isReviving = string.Equals(quick.Status.State, "Reviving", StringComparison.OrdinalIgnoreCase)
+                || quick.Status.ReviveRemainingSeconds is > 0;
+            dispatched = HeroStatusDecision.IsAdventureDispatchConfirmed(
+                activeAdventurePage,
+                quick.IsInVillage,
+                quick.Status.IsDead,
+                isReviving);
+        }
+
         if (quick.Status.SecondsUntilReturn is > 0)
         {
             returnSeconds = quick.Status.SecondsUntilReturn.Value;

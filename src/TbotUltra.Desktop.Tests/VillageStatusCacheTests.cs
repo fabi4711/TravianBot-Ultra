@@ -59,6 +59,75 @@ public sealed class VillageStatusCacheTests
     }
 
     [Fact]
+    public void Set_UnknownReloginStatusPreservesConfirmedCityAndWatchtower()
+    {
+        var cache = new VillageStatusCache();
+        var confirmed = MakeStatus("WHY", 164, 110) with
+        {
+            CityCapability = CityCapability.Enabled,
+            CityStatus = CityStatus.City,
+            WatchtowerStatus = new WatchtowerStatus(19, [], DateTimeOffset.UtcNow),
+        };
+        cache.Set("WHY", confirmed);
+
+        cache.Set("WHY", MakeStatus("WHY", 164, 110));
+
+        Assert.True(cache.TryGetByKey("xy:164|110", out var restored));
+        Assert.Equal(CityCapability.Enabled, restored.CityCapability);
+        Assert.Equal(CityStatus.City, restored.CityStatus);
+        Assert.Equal(19, restored.WatchtowerStatus?.Level);
+    }
+
+    [Fact]
+    public void Set_OlderVillageReadDoesNotEraseNewerActiveWatchtowerQueue()
+    {
+        var cache = new VillageStatusCache();
+        var observed = new DateTimeOffset(2026, 10, 9, 10, 2, 30, TimeSpan.Zero);
+        var active = new WatchtowerStatus(19,
+            [new WatchtowerConstruction(20, 4680, null, TimerSnapshot.FromRemaining(4680, observed))],
+            observed);
+        cache.Set("WHY", MakeStatus("WHY", 164, 110) with
+        {
+            CityCapability = CityCapability.Enabled,
+            CityStatus = CityStatus.City,
+            WatchtowerStatus = active,
+        });
+
+        cache.Set("WHY", MakeStatus("WHY", 164, 110) with
+        {
+            CityCapability = CityCapability.Enabled,
+            CityStatus = CityStatus.City,
+            WatchtowerStatus = new WatchtowerStatus(19, [], observed.AddDays(-1)),
+        });
+
+        Assert.True(cache.TryGetByKey("xy:164|110", out var status));
+        Assert.Same(active, status.WatchtowerStatus);
+        var queueRows = LiveQueueRowFactory.BuildConstructionRows(
+            [], 2, hasStatus: true, observed.AddMinutes(1), value => value.ToString("HH:mm:ss"), status.WatchtowerStatus);
+        Assert.Equal(3, queueRows.Count);
+        Assert.Equal("Watchtowers", queueRows[2].Name);
+        Assert.True(queueRows[2].IsWatchtower);
+    }
+
+    [Fact]
+    public void Set_ConfirmedVillageOverridesOlderCityKnowledge()
+    {
+        var cache = new VillageStatusCache();
+        cache.Set("WHY", MakeStatus("WHY", 164, 110) with
+        {
+            CityCapability = CityCapability.Enabled,
+            CityStatus = CityStatus.City,
+            WatchtowerStatus = new WatchtowerStatus(19, [], DateTimeOffset.UtcNow),
+        });
+
+        cache.Set("WHY", MakeStatus("WHY", 164, 110) with { CityStatus = CityStatus.Village });
+
+        Assert.True(cache.TryGetByKey("xy:164|110", out var updated));
+        Assert.Equal(CityStatus.Village, updated.CityStatus);
+        Assert.Null(updated.WatchtowerStatus);
+    }
+
+    [Fact]
     public void Set_StorageOnlyRefreshPreservesKnownProductionForTheSameVillage()
     {
         var cache = new VillageStatusCache();

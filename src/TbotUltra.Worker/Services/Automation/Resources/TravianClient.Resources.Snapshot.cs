@@ -16,7 +16,7 @@ public sealed partial class TravianClient
             {
                 if (allowNavigationToResourcePage && !IsCurrentUrlForPath(Paths.Resources))
                 {
-                    await GotoAsync(Paths.Resources, cancellationToken);
+                    await OpenVillageOverviewAsync(resourceFields: true, cancellationToken);
                 }
 
                 await EnsureLoggedInAsync(cancellationToken: cancellationToken);
@@ -138,10 +138,33 @@ public sealed partial class TravianClient
         Notify("[resources:verbose] NavigateToResourceFieldsAsync started");
         if (!IsCurrentUrlForPath(Paths.Resources))
         {
-            await GotoAsync(Paths.Resources, cancellationToken);
+            await OpenVillageOverviewAsync(resourceFields: true, cancellationToken);
         }
 
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
+    }
+
+    public async Task<bool> ParkOnBuildingsPageIfOnResourcesAsync(
+        DateTimeOffset? nextTaskAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!IsCurrentUrlForPath(Paths.Resources))
+        {
+            return false;
+        }
+
+        var countdown = IncomingAttackDomParser.ParseDorf1MovementCountdown(await _page.ContentAsync());
+        var nowUtc = DateTimeOffset.UtcNow;
+        if (!IncomingAttackDomParser.ShouldParkOnDorf2(countdown, nextTaskAtUtc, nowUtc))
+        {
+            Notify($"[dorf2-park] staying on Dorf1; next movement={countdown.NextSeconds?.ToString() ?? "none"}s, next task={nextTaskAtUtc?.ToString("O") ?? "unknown"}.");
+            return false;
+        }
+
+        Notify($"[dorf2-park] moving to Dorf2; next movement={countdown.NextSeconds?.ToString() ?? "unreadable"}s, next task={nextTaskAtUtc?.ToString("O") ?? "unknown"}.");
+        await OpenVillageOverviewAsync(resourceFields: false, cancellationToken);
+        return true;
     }
 
     public async Task<IReadOnlyDictionary<string, double?>> ReadCurrentPageResourceProductionPerHourAsync(CancellationToken cancellationToken = default)
@@ -151,7 +174,7 @@ public sealed partial class TravianClient
         if (!IsCurrentUrlForPath(Paths.Resources))
         {
             Notify("ReadCurrentPageResourceProductionPerHourAsync: current page is not dorf1, navigating to resource fields first.");
-            await GotoAsync(Paths.Resources, cancellationToken);
+            await OpenVillageOverviewAsync(resourceFields: true, cancellationToken);
             await EnsureLoggedInAsync(cancellationToken: cancellationToken);
         }
 

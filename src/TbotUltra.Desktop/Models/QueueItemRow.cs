@@ -26,7 +26,9 @@ public sealed record QueueItemRow
     public bool IsAutomaticRepair { get; init; }
     public string AutomaticRepairReason { get; init; } = string.Empty;
     public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
     public string CreatedAtServer { get; init; } = string.Empty;
+    public string HistoryAtServer { get; init; } = string.Empty;
     public string NextAttemptAtServer { get; init; } = string.Empty;
 
     // Construction estimate (build time + resource cost). Only set for construction tasks; other

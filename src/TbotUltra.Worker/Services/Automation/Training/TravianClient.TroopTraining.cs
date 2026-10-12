@@ -167,6 +167,50 @@ public sealed partial class TravianClient : ITrainingClient
             {
                 Notify($"[troops] reusing verified village status for '{status.ActiveVillage}' before training; page and coordinates still match.");
             }
+
+            // A village round may perform other tasks before training, so its 20-second status can
+            // expire while the browser is still on the same Dorf2. Refresh only the live overview
+            // and stock here; Dorf1 fields and production are not needed to start troop training.
+            if (status is null && activeVillageKey is not null)
+            {
+                try
+                {
+                    var overview = await ReadCurrentBuildingOverviewStatusAsync(cancellationToken);
+                    var overviewKey = BuildTroopQueueVillageKey(
+                        overview.ActiveVillageCoordX,
+                        overview.ActiveVillageCoordY);
+                    var hasMainBuilding = overview.Buildings.Any(building => building.Gid == 15
+                        || string.Equals(building.Name, "Main Building", StringComparison.OrdinalIgnoreCase));
+                    var levelsKnown = overview.Buildings.All(building => building.Level.HasValue);
+                    var resourcesComplete = new[] { "wood", "clay", "iron", "crop" }.All(resource =>
+                        overview.Resources.TryGetValue(resource, out var value)
+                        && TravianParsing.TryParseResourceValue(value).HasValue);
+                    var complete = string.Equals(activeVillageKey, overviewKey, StringComparison.OrdinalIgnoreCase)
+                        && overview.Buildings.Count >= 22
+                        && hasMainBuilding
+                        && levelsKnown
+                        && TroopCatalog.IsKnownTribe(overview.Tribe)
+                        && resourcesComplete;
+                    if (complete)
+                    {
+                        var currency = await ReadCurrencyAsync(cancellationToken);
+                        status = overview with { Gold = currency.Gold, Silver = currency.Silver };
+                        Notify($"[troops] using live Dorf2 buildings and resources for '{status.ActiveVillage}' without a Dorf1 status read.");
+                    }
+                    else
+                    {
+                        Notify($"[troops] Dorf2 training snapshot incomplete or village identity changed (expected={activeVillageKey}, actual={overviewKey}, buildings={overview.Buildings.Count}, main={hasMainBuilding}, levelsKnown={levelsKnown}, tribe={overview.Tribe}, resourcesComplete={resourcesComplete}); using full village status.");
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Notify($"[troops] Dorf2 training snapshot unavailable ({ex.GetType().Name}: {ex.Message}); using full village status.");
+                }
+            }
         }
 
         status ??= await ReadVillageStatusAsync(cancellationToken);
@@ -509,7 +553,7 @@ public sealed partial class TravianClient : ITrainingClient
         }
 
         Notify($"[troops:verbose] queue scan:navigating to {buildingName} slot {building.SlotId.Value}.");
-        await GotoAsync(Paths.BuildBySlot(building.SlotId.Value), cancellationToken);
+        await OpenSlotFromOverviewAsync(building.SlotId.Value, cancellationToken);
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
 
         var queueItems = await ReadTroopTrainingQueueFromCurrentPageAsync(cancellationToken);
@@ -554,10 +598,7 @@ public sealed partial class TravianClient : ITrainingClient
         }
 
         Notify($"[troops:verbose]opening {candidate.Request.BuildingName} slot {candidate.QueueStatus.SlotId.Value}.");
-        await EnsurePageForReadAsync(
-            Paths.BuildBySlot(candidate.QueueStatus.SlotId.Value),
-            $"train at {candidate.Request.BuildingName}",
-            cancellationToken);
+        await OpenSlotFromOverviewAsync(candidate.QueueStatus.SlotId.Value, cancellationToken);
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
         Notify($"[troops:verbose]page after navigation url='{_page.Url}'.");
 

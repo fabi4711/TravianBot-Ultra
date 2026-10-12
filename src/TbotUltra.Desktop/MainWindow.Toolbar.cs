@@ -172,6 +172,7 @@ public partial class MainWindow
         IReadOnlyList<VillageSettingsRow>? villageSettingsRows)
     {
         var optionsBeforeSettings = LoadBotOptions();
+        var taskPriorityBeforeSettings = _continuousLoopGroupOrder.ToArray();
         var detailedBrowserLoggingBefore = optionsBeforeSettings.DetailedBrowserLoggingEnabled;
         var detectedResetHour = Services.ProductionBonusStateStore
             .LoadSettings(_projectRoot, _accountStore.ActiveAccountName())
@@ -206,7 +207,11 @@ public partial class MainWindow
             RunVillageStatusSweepNowFromSettingsAsync,
             HasCompletedNewAccountAnalysis(),
             BuildHeroCropAntiStarveVillageRows(),
-            _projectRoot)
+            _projectRoot,
+            _isLoggedIn
+                ? _automationLoopTasks.Where(item => item.IsEnabled).Select(item => item.TaskName).ToArray()
+                : null,
+            !string.IsNullOrWhiteSpace(_accountStore.ActiveAccountName()))
         {
             Owner = Application.Current.Windows
                 .OfType<Window>()
@@ -236,6 +241,24 @@ public partial class MainWindow
         }
         if (saved)
         {
+            if (!optionsBeforeSettings.ParkOnDorf2WhileIdle
+                && optionsAfterSettings.ParkOnDorf2WhileIdle)
+            {
+                if (_automationDesk.Current is { Phase: AutomationPhase.Running, Mode: AutomationRunMode.ContinuousLoop })
+                {
+                    _automationDesk.RequestImmediateWork();
+                }
+                var wake = _automationDesk.Wake(AutomationWakeReason.SettingsChanged);
+                if (wake is AutomationWakeResult.Accepted or AutomationWakeResult.Coalesced)
+                {
+                    AppendLog("[dorf2-park] setting enabled; current Dorf1 page will be checked at the next automation boundary.");
+                }
+            }
+            if (!taskPriorityBeforeSettings.SequenceEqual(_continuousLoopGroupOrder, StringComparer.OrdinalIgnoreCase))
+            {
+                AppendLog($"[task-priority] saved order: {string.Join(" > ", _continuousLoopGroupOrder)}.");
+                RequestContinuousAutomationWake();
+            }
             ResetChangedRestartDelayTasks(optionsBeforeSettings, optionsAfterSettings);
             if (AutomationSettingsWakePolicy.ShouldWakeForShortVillageWaitChange(
                     saved,
@@ -339,6 +362,7 @@ public partial class MainWindow
             _loopController.MarkClosing();
             _inboxAutoEnabled = false;
             _clockTimer.Stop();
+            _farmingCountdownTimer.Stop();
             CloseCurrentProxyUsageInterval(DateTimeOffset.UtcNow);
             CloseCurrentSessionActivityInterval(DateTimeOffset.UtcNow);
             NotifySessionPacingOnlineStopped();

@@ -38,8 +38,10 @@ public static class AccountProxyPlanValidator
         }
 
         var duplicateIds = plan.Assignments
-            .GroupBy(item => item.ProxyId?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase)
-            .Where(group => group.Key.Length == 0 || group.Count() > 1)
+            .GroupBy(item => item.Kind == ProxyRouteKind.OwnIp
+                ? "own-ip"
+                : $"proxy:{item.ProxyId?.Trim()}", StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
             .Select(group => group.Key)
             .ToList();
         if (duplicateIds.Count > 0)
@@ -55,57 +57,77 @@ public static class AccountProxyPlanValidator
         var proxies = library.ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
         foreach (var assignment in plan.Assignments)
         {
-            if (!proxies.TryGetValue(assignment.ProxyId, out var proxy))
+            if (assignment.Kind is not (ProxyRouteKind.Proxy or ProxyRouteKind.OwnIp))
             {
-                Error(issues, "missing_proxy", $"Proxy '{assignment.ProxyId}' no longer exists in the proxy list.");
+                Error(issues, "invalid_route", "The schedule contains an unknown connection type.");
                 continue;
             }
 
-            if (!string.IsNullOrWhiteSpace(proxy.AssignedAccount)
-                && !string.Equals(proxy.AssignedAccount, accountName, StringComparison.OrdinalIgnoreCase))
+            ProxyLibraryEntry? proxy = null;
+            var routeName = "Own IP";
+            if (assignment.Kind == ProxyRouteKind.OwnIp)
             {
-                Error(issues, "locked_proxy", $"Proxy '{proxy.DisplayName}' is locked to account '{proxy.AssignedAccount}'.");
+                if (neverUseOwnIp)
+                {
+                    Error(issues, "own_ip_forbidden", "Own IP cannot be scheduled while Never use own IP is enabled.");
+                }
             }
-
-            if (!ProxyParser.TryBuild(proxy.Server, out _, out _))
+            else
             {
-                Error(issues, "invalid_proxy", $"Proxy '{proxy.DisplayName}' has an invalid endpoint.");
+                if (string.IsNullOrWhiteSpace(assignment.ProxyId)
+                    || !proxies.TryGetValue(assignment.ProxyId, out proxy))
+                {
+                    Error(issues, "missing_proxy", $"Proxy '{assignment.ProxyId}' no longer exists in the proxy list.");
+                    continue;
+                }
+
+                routeName = $"Proxy '{proxy.DisplayName}'";
+                if (!string.IsNullOrWhiteSpace(proxy.AssignedAccount)
+                    && !string.Equals(proxy.AssignedAccount, accountName, StringComparison.OrdinalIgnoreCase))
+                {
+                    Error(issues, "locked_proxy", $"{routeName} is locked to account '{proxy.AssignedAccount}'.");
+                }
+
+                if (!ProxyParser.TryBuild(proxy.Server, out _, out _))
+                {
+                    Error(issues, "invalid_proxy", $"{routeName} has an invalid endpoint.");
+                }
             }
 
             if (assignment.TimeBlocks.Count == 0)
             {
-                Error(issues, "missing_schedule", $"Proxy '{proxy.DisplayName}' has no scheduled time.");
+                Error(issues, "missing_schedule", $"{routeName} has no scheduled time.");
             }
 
             foreach (var block in assignment.TimeBlocks)
             {
                 if (block.Days.Count == 0)
                 {
-                    Error(issues, "missing_days", $"Proxy '{proxy.DisplayName}' has a block without weekdays.");
+                    Error(issues, "missing_days", $"{routeName} has a block without weekdays.");
                 }
 
                 if (!block.FullDay && (block.StartHour is < 0 or > 23 || block.EndHour is < 0 or > 23 || block.StartHour == block.EndHour))
                 {
-                    Error(issues, "invalid_block", $"Proxy '{proxy.DisplayName}' has an invalid time block. Use Full day for 24-hour coverage.");
+                    Error(issues, "invalid_block", $"{routeName} has an invalid time block. Use Full day for 24-hour coverage.");
                 }
 
                 var duration = DurationHours(block);
                 if (duration * 60 < Math.Max(5, sleepMinMinutes))
                 {
-                    Warning(issues, "short_block", $"Proxy '{proxy.DisplayName}' has a block shorter than the minimum sleep duration and may be skipped.");
+                    Warning(issues, "short_block", $"{routeName} has a block shorter than the minimum sleep duration and may be skipped.");
                 }
 
                 if (plan.VariationPercent >= 40 && duration <= 2)
                 {
-                    Warning(issues, "high_variation", $"Proxy '{proxy.DisplayName}' combines high variation with a short block.");
+                    Warning(issues, "high_variation", $"{routeName} combines high variation with a short block.");
                 }
             }
 
-            if (proxy.LatencyMs is > 2000)
+            if (proxy?.LatencyMs is > 2000)
             {
                 Warning(issues, "slow_proxy", $"Proxy '{proxy.DisplayName}' is slow ({proxy.LatencyMs} ms).");
             }
-            else if (proxy.LastFailureUtc is { } failure && DateTime.UtcNow - failure.ToUniversalTime() < ProxyFailoverService.FailedProxyCooldown)
+            else if (proxy?.LastFailureUtc is { } failure && DateTime.UtcNow - failure.ToUniversalTime() < ProxyFailoverService.FailedProxyCooldown)
             {
                 Warning(issues, "cooldown", $"Proxy '{proxy.DisplayName}' is currently in recovery cooldown.");
             }
@@ -116,6 +138,7 @@ public static class AccountProxyPlanValidator
         if (requireHealth)
         {
             var existing = plan.Assignments
+                .Where(item => item.Kind == ProxyRouteKind.Proxy)
                 .Select(item => proxies.GetValueOrDefault(item.ProxyId))
                 .Where(item => item is not null)
                 .Cast<ProxyLibraryEntry>()
@@ -141,7 +164,8 @@ public static class AccountProxyPlanValidator
                     foreach (var hour in allowedHours.Where(hour => hour is >= 0 and <= 23).Distinct())
                     {
                         var hasWorkingCoverage = plan.Assignments.Any(assignment =>
-                            proxies.GetValueOrDefault(assignment.ProxyId)?.IsWorking == true
+                            assignment.Kind == ProxyRouteKind.Proxy
+                            && proxies.GetValueOrDefault(assignment.ProxyId)?.IsWorking == true
                             && assignment.TimeBlocks.Any(block => Covers(block, day, hour)));
                         if (!hasWorkingCoverage)
                         {
@@ -195,7 +219,8 @@ public static class AccountProxyPlanValidator
             foreach (var hour in Enumerable.Range(0, 24))
             {
                 var covering = plan.Assignments
-                    .Where(assignment => proxies.ContainsKey(assignment.ProxyId))
+                    .Where(assignment => (assignment.Kind == ProxyRouteKind.OwnIp && !neverUseOwnIp)
+                        || (assignment.Kind == ProxyRouteKind.Proxy && proxies.ContainsKey(assignment.ProxyId)))
                     .Where(assignment => assignment.TimeBlocks.Any(block => Covers(block, day, hour)))
                     .ToList();
                 if (allowed.Contains(hour) && covering.Count == 0)
@@ -216,12 +241,16 @@ public static class AccountProxyPlanValidator
             Warning(issues, "no_allowed_hours", "No Allowed hours are selected, so the account will never run automatically.");
         }
 
-        foreach (var assignment in plan.Assignments.Where(item => proxies.ContainsKey(item.ProxyId)))
+        foreach (var assignment in plan.Assignments.Where(item => item.Kind == ProxyRouteKind.OwnIp
+            || item.Kind == ProxyRouteKind.Proxy && proxies.ContainsKey(item.ProxyId)))
         {
             var used = Enum.GetValues<DayOfWeek>().Any(day => allowed.Any(hour => assignment.TimeBlocks.Any(block => Covers(block, day, hour))));
             if (!used)
             {
-                Warning(issues, "outside_allowed_hours", $"Proxy '{proxies[assignment.ProxyId].DisplayName}' has no schedule overlapping Allowed hours.");
+                var routeName = assignment.Kind == ProxyRouteKind.OwnIp
+                    ? "Own IP"
+                    : $"Proxy '{proxies[assignment.ProxyId].DisplayName}'";
+                Warning(issues, "outside_allowed_hours", $"{routeName} has no schedule overlapping Allowed hours.");
             }
         }
 
@@ -232,7 +261,7 @@ public static class AccountProxyPlanValidator
                 .Sum(day => allowed.Count(hour => assignment.TimeBlocks.Any(block => Covers(block, day, hour)))));
             if (coveredSlots > 0 && dominant >= coveredSlots * 0.9)
             {
-                Warning(issues, "limited_rotation", "One proxy covers almost all allowed runtime, so actual rotation will be limited.");
+                Warning(issues, "limited_rotation", "One connection covers almost all allowed runtime, so actual rotation will be limited.");
             }
         }
     }

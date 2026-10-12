@@ -1,10 +1,71 @@
 using TbotUltra.Worker.Services;
+using TbotUltra.Worker.Domain;
 using Xunit;
 
 namespace TbotUltra.Worker.Tests;
 
 public sealed class TravianSessionCacheTests
 {
+    [Theory]
+    [InlineData(CityCapability.Unknown)]
+    [InlineData(CityCapability.Disabled)]
+    public void ConfirmCitiesCapabilityFromCity_UsesConfirmedCityAsPositiveEvidence(CityCapability initial)
+    {
+        var cache = new TravianSessionCache { CityCapability = initial };
+
+        Assert.True(cache.ConfirmCitiesCapabilityFromCity());
+        Assert.Equal(CityCapability.Enabled, cache.CityCapability);
+        Assert.False(cache.ConfirmCitiesCapabilityFromCity());
+    }
+
+    [Fact]
+    public void RestoreWatchtowerSnapshot_RecoversCityKnowledgeForQuickRelogin()
+    {
+        var cache = new TravianSessionCache
+        {
+            CachedVillages = [new Village("WHY", "dorf1.php?newdid=1", false, CoordX: 164, CoordY: 110)],
+        };
+        var status = new WatchtowerStatus(19, [], DateTimeOffset.UtcNow);
+
+        cache.RestoreWatchtowerSnapshot("xy:164|110", status);
+
+        Assert.Equal(CityCapability.Enabled, cache.CityCapability);
+        Assert.Equal(CityStatus.City, cache.VillageCityStatuses["xy:164|110"]);
+        Assert.Equal(CityStatus.City, Assert.Single(cache.CachedVillages!).CityStatus);
+        Assert.Same(status, cache.WatchtowerStatuses["xy:164|110"]);
+
+        var sidebarVillage = new Village("WHY", "dorf1.php?newdid=1", false, CoordX: 164, CoordY: 110);
+        var merged = VillageIdentityReconciler.MergeFreshWithCached(sidebarVillage, cache.CachedVillages);
+        Assert.Equal(CityStatus.City, merged.CityStatus);
+    }
+
+    [Fact]
+    public void RestoreWatchtowerSnapshot_UpdatesOlderProfileVillageLabel()
+    {
+        var cache = new TravianSessionCache
+        {
+            CachedVillages = [new Village("WHY", "dorf1.php?newdid=1", false, CoordX: 164, CoordY: 110,
+                CityStatus: CityStatus.Village)],
+        };
+
+        cache.RestoreWatchtowerSnapshot(
+            "xy:164|110",
+            new WatchtowerStatus(19, [], DateTimeOffset.UtcNow));
+
+        Assert.Equal(CityStatus.City, Assert.Single(cache.CachedVillages!).CityStatus);
+    }
+
+    [Fact]
+    public void ObserveCityCapability_UnknownLoginProbeDoesNotEraseConfirmedCity()
+    {
+        var cache = new TravianSessionCache();
+        cache.ConfirmCitiesCapabilityFromCity();
+
+        Assert.Equal(CityCapability.Enabled, cache.ObserveCityCapability(CityCapability.Unknown));
+        Assert.Equal(CityCapability.Enabled, cache.CityCapability);
+        Assert.Equal(CityCapability.Disabled, cache.ObserveCityCapability(CityCapability.Disabled));
+    }
+
     [Fact]
     public void RecentVillageStatus_IsOneShotAndRequiresMatchingStableVillageKey()
     {

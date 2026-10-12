@@ -479,14 +479,11 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
 
     /// <summary>
     /// Refreshes each row's <c>TroopOptions</c> dropdown based on the
-    /// player's tribe. Returns <c>true</c> when the previously selected
-    /// troop is no longer available for any row and a fallback was applied —
-    /// the caller should persist in that case so the new selection survives
-    /// across restarts.
+    /// player's tribe. A non-empty selection is never replaced by a tribe/status
+    /// refresh; execution validates it against the actual village before training.
     /// </summary>
-    public bool UpdateTroopOptions(string? tribe)
+    public void UpdateTroopOptions(string? tribe)
     {
-        var configChanged = false;
         _isConfigSuppressed = true;
         try
         {
@@ -504,14 +501,15 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
                 {
                     option.SelectedTroop = resolvedTroops.First(item => string.Equals(item, currentSelection, StringComparison.OrdinalIgnoreCase));
                 }
+                else if (!string.IsNullOrWhiteSpace(currentSelection))
+                {
+                    // Keep the saved value in the read-only ComboBox text, but not in the
+                    // tribe/building-specific list of trainable choices.
+                    option.SelectedTroop = currentSelection;
+                }
                 else
                 {
                     var fallbackTroop = resolvedTroops.FirstOrDefault() ?? string.Empty;
-                    if (!string.Equals(option.SelectedTroop, fallbackTroop, StringComparison.Ordinal))
-                    {
-                        configChanged = true;
-                    }
-
                     option.SelectedTroop = fallbackTroop;
                 }
             }
@@ -521,7 +519,6 @@ public sealed partial class TroopTrainingViewModel : BaseViewModel
             _isConfigSuppressed = false;
         }
 
-        return configChanged;
     }
 
     private void OnOptionPropertyChanged(object? sender, PropertyChangedEventArgs e)

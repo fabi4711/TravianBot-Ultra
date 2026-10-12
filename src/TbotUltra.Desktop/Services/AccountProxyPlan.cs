@@ -10,7 +10,9 @@ public sealed class AccountProxyPlan
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
     [JsonIgnore]
-    public bool IsRotation => Enabled && Assignments.Select(item => item.ProxyId).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
+    public bool IsRotation => Enabled && Assignments
+        .Select(item => item.Kind == ProxyRouteKind.OwnIp ? "own-ip" : $"proxy:{item.ProxyId}")
+        .Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1;
 
     public AccountProxyPlan Clone() => new()
     {
@@ -23,14 +25,22 @@ public sealed class AccountProxyPlan
 
 public sealed class AccountProxyAssignment
 {
+    public ProxyRouteKind Kind { get; set; }
     public string ProxyId { get; set; } = string.Empty;
     public List<ProxyTimeBlock> TimeBlocks { get; set; } = [];
 
     public AccountProxyAssignment Clone() => new()
     {
+        Kind = Kind,
         ProxyId = ProxyId,
         TimeBlocks = TimeBlocks.Select(item => item.Clone()).ToList(),
     };
+}
+
+public enum ProxyRouteKind
+{
+    Proxy,
+    OwnIp,
 }
 
 public sealed class ProxyTimeBlock
@@ -77,4 +87,6 @@ public sealed record ProxyPlanResolution(
     string ProxyId,
     DateTimeOffset? NextTransitionAt,
     string NextProxyId,
-    string Reason);
+    string Reason,
+    ProxyRouteKind? Kind = null,
+    ProxyRouteKind? NextKind = null);

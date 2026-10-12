@@ -1,9 +1,49 @@
 using Xunit;
+using TbotUltra.Desktop.ViewModels;
 
 namespace TbotUltra.Desktop.Tests;
 
 public sealed class AlarmClassificationTests
 {
+    [Theory]
+    [InlineData("[slot-nav] slot 13 candidate 1/2 was not actionable: Timeout 3000ms exceeded.")]
+    [InlineData("[slot-nav] slot 40 candidate 2/2 was not actionable: Timeout 3000ms exceeded.")]
+    public void FailedOverviewClickCandidate_IsDiagnosticNotAlarm(string message)
+    {
+        Assert.False(MainWindow.IsAlarmMessage(message));
+    }
+
+    [Fact]
+    public void VerifiedSlotUrlFallback_IsListedButAutoAcknowledged()
+    {
+        const string message = "ALARM: [slot-nav] Overview click unavailable for visible slot 40 on Dorf2; verified URL fallback succeeded.";
+
+        Assert.True(MainWindow.IsAlarmMessage(message));
+        Assert.True(MainWindow.IsAutoAcknowledgedAlarmMessage(message));
+        Assert.False(MainWindow.IsAutoAcknowledgedAlarmMessage(
+            "ALARM: [slot-nav] URL fallback failed for visible slot 40 on Dorf2."));
+
+        var alarms = new AlarmsViewModel();
+        alarms.RecordAlarm(message, "account|slot-40", MainWindow.IsAutoAcknowledgedAlarmMessage(message), DateTimeOffset.UtcNow);
+        Assert.True(Assert.Single(alarms.Entries).IsAcknowledged);
+        Assert.Equal(0, alarms.UnacknowledgedCount);
+    }
+
+    [Fact]
+    public void OneWorkerFailureHasSameAlarmSignatureInQueueAndLoopDiagnostics()
+    {
+        const string context = "[context account='account' task='upgrade_building_to_level' village='ELS' xy='-121|82']";
+        var worker = $"[upgrade_building_to_level FAILED] after 65,3s: TimeoutException: Page did not reach a ready state. {context}";
+        var queue = $"[queue] FAIL id=abc task='upgrade_building_to_level' village='ELS' after 65,4s: TimeoutException: Page did not reach a ready state. {context}";
+        var loop = $"[LOOP 134] FAIL 65,4s | TimeoutException: Page did not reach a ready state. {context}";
+
+        Assert.Equal(MainWindow.AlarmIncidentSignature(worker), MainWindow.AlarmIncidentSignature(queue));
+        Assert.Equal(MainWindow.AlarmIncidentSignature(worker), MainWindow.AlarmIncidentSignature(loop));
+        Assert.True(MainWindow.IsFollowOnFailureDiagnostic(queue));
+        Assert.True(MainWindow.IsFollowOnFailureDiagnostic(loop));
+        Assert.False(MainWindow.IsFollowOnFailureDiagnostic(worker));
+    }
+
     [Theory]
     [InlineData("[farm-list] send: 'Rainbow' marked sent (response=success+error; Travian processed the Start request).")]
     [InlineData("[farm-list] start-all: 'Steppes' marked sent (response=error; Travian processed the Start request).")]

@@ -66,6 +66,10 @@ public partial class MainWindow
         try
         {
             var ordered = _queuePanelService.GetItems().ToList();
+            if (PruneCompletedConstructionQueueItems(ordered))
+            {
+                ordered = _queuePanelService.GetItems().ToList();
+            }
             _queueItemsForUiProjection = ordered;
             ClearStaleBuildingPendingCaches(ordered);
 
@@ -305,7 +309,8 @@ public partial class MainWindow
                      slotCount,
                      snapshot.Knowledge != ConstructionQueueKnowledge.Unknown,
                      nowUtc,
-                     FormatQueueFinishTime);
+                     FormatQueueFinishTime,
+                     status?.WatchtowerStatus);
         _travianQueueViewModel.ApplyBuildQueueRows(rows);
     }
 

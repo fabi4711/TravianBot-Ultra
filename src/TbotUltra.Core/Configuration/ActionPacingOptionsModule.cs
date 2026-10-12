@@ -3,7 +3,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace TbotUltra.Core.Configuration;
 
-internal sealed record KeepAliveOptions(bool Enabled, int MinMinutes, int MaxMinutes);
+internal sealed record KeepAliveOptions(bool Enabled, int MinMinutes, int MaxMinutes, bool ParkOnDorf2WhileIdle);
 
 internal sealed record VillageStatusSweepOptions(
     bool Enabled,
@@ -75,6 +75,10 @@ internal static class ActionPacingOptionsModule
         return new SessionPacingSettingsConfiguration(
             configuration.GetValue(BotOptionPayloadKeys.SessionPacingEnabled, PacingDefaults.SessionPacingEnabled),
             configuration.GetValue(BotOptionPayloadKeys.SmartSleepEnabled, PacingDefaults.SmartSleepEnabled),
+            configuration.GetValue(BotOptionPayloadKeys.SmartSleepMaxRuntimeEnabled, PacingDefaults.SmartSleepMaxRuntimeEnabled),
+            Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.SmartSleepMaxRuntimeMinutes, PacingDefaults.SmartSleepMaxRuntimeMinutes), 1, 10080),
+            Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.SmartSleepMaxRuntimeSleepMinutes, PacingDefaults.SmartSleepMaxRuntimeSleepMinutes), 1, 1440),
+            Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.SmartSleepMaxRuntimeVariationPercent, PacingDefaults.SmartSleepMaxRuntimeVariationPercent), 0, 50),
             configuration.GetValue(BotOptionPayloadKeys.SmartSleepWakeWhenConstructionQueueClears, PacingDefaults.SmartSleepWakeWhenConstructionQueueClears),
             Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.SmartSleepMinimumOpportunityMinutes, PacingDefaults.SmartSleepMinimumOpportunityMinutes), 1, 1440),
             Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.SmartSleepWakeBeforeMinutes, PacingDefaults.SmartSleepWakeBeforeMinutes), 0, 1440),
@@ -99,6 +103,10 @@ internal static class ActionPacingOptionsModule
     {
         target[BotOptionPayloadKeys.SessionPacingEnabled] = pacing.SessionPacingEnabled;
         target[BotOptionPayloadKeys.SmartSleepEnabled] = pacing.SmartSleepEnabled;
+        target[BotOptionPayloadKeys.SmartSleepMaxRuntimeEnabled] = pacing.SmartSleepMaxRuntimeEnabled;
+        target[BotOptionPayloadKeys.SmartSleepMaxRuntimeMinutes] = Math.Clamp(pacing.SmartSleepMaxRuntimeMinutes, 1, 10080);
+        target[BotOptionPayloadKeys.SmartSleepMaxRuntimeSleepMinutes] = Math.Clamp(pacing.SmartSleepMaxRuntimeSleepMinutes, 1, 1440);
+        target[BotOptionPayloadKeys.SmartSleepMaxRuntimeVariationPercent] = Math.Clamp(pacing.SmartSleepMaxRuntimeVariationPercent, 0, 50);
         target[BotOptionPayloadKeys.SmartSleepWakeWhenConstructionQueueClears] = pacing.SmartSleepWakeWhenConstructionQueueClears;
         target[BotOptionPayloadKeys.SmartSleepMinimumOpportunityMinutes] = Math.Clamp(pacing.SmartSleepMinimumOpportunityMinutes, 1, 1440);
         target[BotOptionPayloadKeys.SmartSleepWakeBeforeMinutes] = Math.Clamp(pacing.SmartSleepWakeBeforeMinutes, 0, 1440);
@@ -124,6 +132,7 @@ internal static class ActionPacingOptionsModule
         target[BotOptionPayloadKeys.ShortVillageDeferSeconds] = PacingDefaults.NormalizeShortVillageDeferSeconds(options.ShortVillageDeferSeconds);
         target[BotOptionPayloadKeys.VillageRoundSleepExtensionMinutes] = PacingDefaults.NormalizeVillageRoundSleepExtensionMinutes(options.VillageRoundSleepExtensionMinutes);
         target[BotOptionPayloadKeys.ContinuousKeepAliveEnabled] = options.ContinuousKeepAliveEnabled;
+        target[BotOptionPayloadKeys.ParkOnDorf2WhileIdle] = options.ParkOnDorf2WhileIdle;
         SettingsDraftWriter.WriteIntRange(target, BotOptionPayloadKeys.ContinuousKeepAliveMinMinutes, BotOptionPayloadKeys.ContinuousKeepAliveMaxMinutes, options.ContinuousKeepAliveMinMinutes, options.ContinuousKeepAliveMaxMinutes, 1, 1440);
         SettingsDraftWriter.WriteDelayRange(target, BotOptionPayloadKeys.FarmListStepDelayMinSeconds, BotOptionPayloadKeys.FarmListStepDelayMaxSeconds, options.FarmListStepDelayMinSeconds, options.FarmListStepDelayMaxSeconds, 0, 3600);
         target[BotOptionPayloadKeys.VillageStatusSweepEnabled] = options.VillageStatusSweepEnabled;
@@ -184,6 +193,10 @@ internal static class ActionPacingOptionsModule
         BotOptionPayloadKeys.SessionPacingRuntimeSeconds,
         BotOptionPayloadKeys.SessionPacingDailyHistory,
         BotOptionPayloadKeys.SmartSleepEnabled,
+        BotOptionPayloadKeys.SmartSleepMaxRuntimeEnabled,
+        BotOptionPayloadKeys.SmartSleepMaxRuntimeMinutes,
+        BotOptionPayloadKeys.SmartSleepMaxRuntimeSleepMinutes,
+        BotOptionPayloadKeys.SmartSleepMaxRuntimeVariationPercent,
         BotOptionPayloadKeys.SmartSleepMinimumOpportunityMinutes,
         BotOptionPayloadKeys.SmartSleepWakeBeforeMinutes,
         BotOptionPayloadKeys.SmartSleepWakeAfterMinutes,
@@ -206,6 +219,7 @@ internal static class ActionPacingOptionsModule
         BotOptionPayloadKeys.ContinuousKeepAliveEnabled,
         BotOptionPayloadKeys.ContinuousKeepAliveMinMinutes,
         BotOptionPayloadKeys.ContinuousKeepAliveMaxMinutes,
+        BotOptionPayloadKeys.ParkOnDorf2WhileIdle,
         BotOptionPayloadKeys.FarmListStepDelayMinSeconds,
         BotOptionPayloadKeys.FarmListStepDelayMaxSeconds,
         BotOptionPayloadKeys.ActionPacingIdleBreakEnabled,
@@ -258,7 +272,8 @@ internal static class ActionPacingOptionsModule
             KeepAlive = new KeepAliveOptions(
                 configuration.GetValue(BotOptionPayloadKeys.ContinuousKeepAliveEnabled, PacingDefaults.ContinuousKeepAliveEnabled),
                 Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.ContinuousKeepAliveMinMinutes, PacingDefaults.ContinuousKeepAliveMinMinutes), 1, 1440),
-                Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.ContinuousKeepAliveMaxMinutes, PacingDefaults.ContinuousKeepAliveMaxMinutes), 1, 1440)),
+                Math.Clamp(configuration.GetValue(BotOptionPayloadKeys.ContinuousKeepAliveMaxMinutes, PacingDefaults.ContinuousKeepAliveMaxMinutes), 1, 1440),
+                configuration.GetValue(BotOptionPayloadKeys.ParkOnDorf2WhileIdle, PacingDefaults.ParkOnDorf2WhileIdle)),
             VillageStatusSweep = new VillageStatusSweepOptions(
                 configuration.GetValue(BotOptionPayloadKeys.VillageStatusSweepEnabled, PacingDefaults.VillageStatusSweepEnabled),
                 configuration.GetValue(BotOptionPayloadKeys.VillageStatusSweepDorf1Enabled, true),
@@ -317,7 +332,8 @@ internal static class ActionPacingOptionsModule
             KeepAlive = new KeepAliveOptions(
                 source.ContinuousKeepAliveEnabled,
                 source.ContinuousKeepAliveMinMinutes,
-                source.ContinuousKeepAliveMaxMinutes),
+                source.ContinuousKeepAliveMaxMinutes,
+                source.ParkOnDorf2WhileIdle),
             VillageStatusSweep = new VillageStatusSweepOptions(
                 source.VillageStatusSweepEnabled,
                 source.VillageStatusSweepDorf1Enabled,
@@ -451,6 +467,7 @@ internal static class ActionPacingOptionsModule
             ContinuousKeepAliveEnabled = values.KeepAlive.Enabled,
             ContinuousKeepAliveMinMinutes = values.KeepAlive.MinMinutes,
             ContinuousKeepAliveMaxMinutes = values.KeepAlive.MaxMinutes,
+            ParkOnDorf2WhileIdle = values.KeepAlive.ParkOnDorf2WhileIdle,
             VillageStatusSweepEnabled = values.VillageStatusSweep.Enabled,
             VillageStatusSweepDorf1Enabled = values.VillageStatusSweep.Dorf1Enabled,
             VillageStatusSweepDorf2Enabled = values.VillageStatusSweep.Dorf2Enabled,

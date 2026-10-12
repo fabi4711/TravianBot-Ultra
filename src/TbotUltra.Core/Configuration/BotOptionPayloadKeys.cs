@@ -310,6 +310,10 @@ public static class BotOptionPayloadKeys
     public const string SessionPacingRuntimeSeconds = "session_pacing_runtime_seconds";
     public const string SessionPacingDailyHistory = "session_pacing_daily_history";
     public const string SmartSleepEnabled = "smart_sleep_enabled";
+    public const string SmartSleepMaxRuntimeEnabled = "smart_sleep_max_runtime_enabled";
+    public const string SmartSleepMaxRuntimeMinutes = "smart_sleep_max_runtime_minutes";
+    public const string SmartSleepMaxRuntimeSleepMinutes = "smart_sleep_max_runtime_sleep_minutes";
+    public const string SmartSleepMaxRuntimeVariationPercent = "smart_sleep_max_runtime_variation_percent";
     public const string SmartSleepMinimumOpportunityMinutes = "smart_sleep_minimum_opportunity_minutes";
     public const string SmartSleepWakeBeforeMinutes = "smart_sleep_wake_before_minutes";
     public const string SmartSleepWakeAfterMinutes = "smart_sleep_wake_after_minutes";
@@ -333,6 +337,7 @@ public static class BotOptionPayloadKeys
     public const string ContinuousKeepAliveEnabled = "continuous_keep_alive_enabled";
     public const string ContinuousKeepAliveMinMinutes = "continuous_keep_alive_min_minutes";
     public const string ContinuousKeepAliveMaxMinutes = "continuous_keep_alive_max_minutes";
+    public const string ParkOnDorf2WhileIdle = "park_on_dorf2_while_idle";
     public const string FarmListStepDelayMinSeconds = "farm_list_step_delay_min_seconds";
     public const string FarmListStepDelayMaxSeconds = "farm_list_step_delay_max_seconds";
     public const string VillageStatusSweepEnabled = "village_status_sweep_enabled";
@@ -397,6 +402,14 @@ public static class BotOptionPayloadKeys
     // humanize gate while the bot fills currently available build slots.
     public const string ConstructionLoginFill = "construction_login_fill";
     public const string ConstructionLoginFillExpiresAtUnixSeconds = "construction_login_fill_expires_at_unix_seconds";
+    // Prevents a failed construction attempt from repeatedly releasing its own page-timer wait when
+    // the post-attempt Dorf2 refresh confirms that the Travian construction queue is still empty.
+    public const string ConfirmedEmptyResourceValidationFingerprint = "confirmed_empty_resource_validation_fingerprint";
+    // Safety-net state for repeated identical construction page-timer waits. It is reset when the
+    // blocker changes or the user explicitly resets construction waits.
+    public const string ConstructionDeferBackoffSignature = "construction_defer_backoff_signature";
+    public const string ConstructionDeferBackoffCount = "construction_defer_backoff_count";
+    public const string ConstructionDeferBackoffResourceFingerprint = "construction_defer_backoff_resource_fingerprint";
     // Per-queue-item one-shot marker: Desktop already waited the persisted human delay before
     // navigation, so Worker must validate the live slot without choosing another delay.
     public const string ConstructionHumanizePreNavigationDelaySatisfied = "construction_humanize_pre_navigation_delay_satisfied";

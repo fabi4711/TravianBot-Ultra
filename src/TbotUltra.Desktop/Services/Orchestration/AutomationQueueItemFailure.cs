@@ -23,7 +23,7 @@ internal interface IAutomationQueueItemFailurePort
     Guid EnsureHeroRallyPointRepairQueued(QueueItem item, HeroRallyPointRepairRequest request);
     void ApplyBreweryCelebrationDeferSignal(string? message, TimeSpan delay);
     void ApplyTownHallCelebrationDeferSignal(QueueItem item, string? message, TimeSpan delay);
-    bool MarkDeferred(Guid itemId, TimeSpan delay);
+    bool MarkDeferred(Guid itemId, TimeSpan delay, IReadOnlyDictionary<string, string>? valuesToSet = null);
     string? GetVillageKey(QueueItem item);
     string? GetVillageName(QueueItem item);
     void ClearConstructionLoginFillForBlockedHead(QueueItem item, string source);
@@ -34,11 +34,12 @@ internal interface IAutomationQueueItemFailurePort
     ValueTask RefreshVillageActivityIndicatorsAsync();
     string FormatServerTime(DateTimeOffset value);
     void RebindPendingTemplateStep(QueueItem item, int effectiveSlotId);
+    void RebindPendingBuildingUpgrades(QueueItem item, int effectiveSlotId);
     ValueTask HandleStorageCapacityDependencyAsync(
         QueueItem item,
         Dictionary<string, string> payload);
     ValueTask RefreshFarmListsAfterAutoSendAsync(QueueItem item, string message);
-    ValueTask RefreshConstructionStatusAfterDeferAsync();
+    ValueTask RefreshConstructionStatusAfterDeferAsync(QueueItem item);
     ValueTask VerifyMainBuildingAfterDurationAnomalyAsync(QueueItem item);
     ValueTask HandleCropShortageDeferAsync(QueueItem item);
     ValueTask RefreshTroopTrainingAfterBuildAsync(QueueItem item);
@@ -61,7 +62,8 @@ internal interface IAutomationQueueItemFailure
 
 internal sealed class AutomationQueueItemFailure(
     IAutomationQueueItemFailurePort port,
-    TimeProvider? timeProvider = null) : IAutomationQueueItemFailure
+    TimeProvider? timeProvider = null,
+    Func<int, int, int>? randomInt = null) : IAutomationQueueItemFailure
 {
     private const int MaxConsecutiveRequirementDefers = 12;
     private const string HeroDeferReasonKey = "hero_defer_reason";
@@ -71,6 +73,7 @@ internal sealed class AutomationQueueItemFailure(
     private const string TroopsBlockedReasonSmithyMissing = "smithy_missing";
     private const string TroopsBlockedReasonAllDone = "all_done";
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly Func<int, int, int> _randomInt = randomInt ?? Random.Shared.Next;
 
     public async ValueTask<bool> HandleAsync(
         QueueItem item,
@@ -105,6 +108,24 @@ internal sealed class AutomationQueueItemFailure(
 
         if (hasQueueWait)
         {
+            var payloadChanged = DeferredWaitCalculator.TryMergeDeferredUpgradePayload(
+                ex.Message,
+                item.Payload,
+                out var updatedPayload);
+            ConstructionRepeatedWaitBackoff? repeatedWaitBackoff = null;
+            if (IsConstructionQueueTask(item.TaskName) || IsResourceUpgradeTask(item.TaskName))
+            {
+                repeatedWaitBackoff = ConstructionRepeatedWaitBackoffPolicy.Evaluate(
+                    item,
+                    updatedPayload,
+                    queueWaitDelay,
+                    _randomInt);
+                if (repeatedWaitBackoff is not null)
+                {
+                    queueWaitDelay = repeatedWaitBackoff.Delay;
+                }
+            }
+
             var mainBuildingDurationAnomaly = (IsConstructionQueueTask(item.TaskName) || IsResourceUpgradeTask(item.TaskName))
                 && ex.Message.Contains("main_building_duration_anomaly=true", StringComparison.OrdinalIgnoreCase);
             if (IsConstructionQueueTask(item.TaskName)
@@ -172,7 +193,34 @@ internal sealed class AutomationQueueItemFailure(
                     $"effectiveReadyAt='{effectiveReadyAt:O}' navigation=completed.");
             }
 
-            var deferred = port.MarkDeferred(item.Id, queueWaitDelay);
+            var constructionDeferReason = (IsConstructionQueueTask(item.TaskName) || IsResourceUpgradeTask(item.TaskName))
+                ? ConstructionQueueState.IsQueueOccupancyDeferMessage(ex.Message)
+                    ? BotOptionPayloadKeys.UpgradeDeferReasonQueueFull
+                    : ConstructionQueueState.IsConstructionInProgressDeferMessage(ex.Message)
+                        ? BotOptionPayloadKeys.UpgradeDeferReasonInProgress
+                        : ConstructionQueueState.IsConstructionStorageCapacityDeferMessage(ex.Message)
+                            ? BotOptionPayloadKeys.UpgradeDeferReasonStorageCapacity
+                            : ConstructionQueueState.IsCropShortageDeferMessage(ex.Message)
+                                ? BotOptionPayloadKeys.UpgradeDeferReasonCropShortage
+                                : ConstructionQueueState.IsConstructionRequirementDeferMessage(ex.Message)
+                                    ? BotOptionPayloadKeys.UpgradeDeferReasonRequirements
+                                    : ConstructionQueueState.IsConstructionResourceDeferMessage(ex.Message)
+                                        ? BotOptionPayloadKeys.UpgradeDeferReasonResources
+                                        : ConstructionQueueState.IsConstructionHumanizeDeferMessage(ex.Message)
+                                            ? BotOptionPayloadKeys.UpgradeDeferReasonHumanize
+                                            : BotOptionPayloadKeys.UpgradeDeferReasonRetry
+                : null;
+            IReadOnlyDictionary<string, string>? deferClassification = constructionDeferReason is null
+                ? null
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [BotOptionPayloadKeys.UpgradeDeferReason] = constructionDeferReason,
+                    [BotOptionPayloadKeys.UpgradeDeferClassificationVersion] =
+                        ConstructionQueueState.CurrentDeferClassificationVersion,
+                };
+            // Publish the reason and deadline in one queue-store update. A concurrent live-status
+            // refresh must never see the old queue-full reason on a new resource wait.
+            var deferred = port.MarkDeferred(item.Id, queueWaitDelay, deferClassification);
             if (deferred)
             {
                 if (string.Equals(item.TaskName, "hero_manage", StringComparison.OrdinalIgnoreCase)
@@ -197,7 +245,6 @@ internal sealed class AutomationQueueItemFailure(
                 var constructionSuffix = IsConstructionQueueTask(item.TaskName)
                     ? FormatQueueDeferredConstructionSuffix(mode)
                     : string.Empty;
-                var payloadChanged = DeferredWaitCalculator.TryMergeDeferredUpgradePayload(ex.Message, item.Payload, out var updatedPayload);
                 if (IsDemolition(item)
                     && TryExtractPayloadInt(ex.Message, "demolish_server_wait_seconds", out var serverWaitSeconds)
                     && TryExtractPayloadInt(ex.Message, BotOptionPayloadKeys.DemolishDelaySeconds, out var demolishDelaySeconds))
@@ -207,28 +254,13 @@ internal sealed class AutomationQueueItemFailure(
                     updatedPayload[BotOptionPayloadKeys.DemolishDelaySeconds] = demolishDelaySeconds.ToString();
                     payloadChanged = true;
                 }
-                if (IsConstructionQueueTask(item.TaskName))
+                if (IsConstructionQueueTask(item.TaskName) || IsResourceUpgradeTask(item.TaskName))
                 {
                     // Record WHY this construction item deferred so the resource-driven refresh
                     // (RefreshDeferredConstructionWaitsAsync) doesn't resume a queue-full deferral
                     // the moment resources look sufficient, which caused a brief "Ready" flash
                     // before the worker re-deferred on the still-full build queue.
-                    updatedPayload[BotOptionPayloadKeys.UpgradeDeferReason] =
-                        ConstructionQueueState.IsQueueOccupancyDeferMessage(ex.Message)
-                            ? BotOptionPayloadKeys.UpgradeDeferReasonQueueFull
-                            : ConstructionQueueState.IsConstructionInProgressDeferMessage(ex.Message)
-                                ? BotOptionPayloadKeys.UpgradeDeferReasonInProgress
-                            : ConstructionQueueState.IsConstructionStorageCapacityDeferMessage(ex.Message)
-                                    ? BotOptionPayloadKeys.UpgradeDeferReasonStorageCapacity
-                                : ConstructionQueueState.IsCropShortageDeferMessage(ex.Message)
-                                    ? BotOptionPayloadKeys.UpgradeDeferReasonCropShortage
-                                : ConstructionQueueState.IsConstructionRequirementDeferMessage(ex.Message)
-                                        ? BotOptionPayloadKeys.UpgradeDeferReasonRequirements
-                                        : ConstructionQueueState.IsConstructionResourceDeferMessage(ex.Message)
-                                            ? BotOptionPayloadKeys.UpgradeDeferReasonResources
-                                            : ConstructionQueueState.IsConstructionHumanizeDeferMessage(ex.Message)
-                                                ? BotOptionPayloadKeys.UpgradeDeferReasonHumanize
-                                                : BotOptionPayloadKeys.UpgradeDeferReasonRetry;
+                    updatedPayload[BotOptionPayloadKeys.UpgradeDeferReason] = constructionDeferReason!;
                     updatedPayload[BotOptionPayloadKeys.UpgradeDeferClassificationVersion] =
                         ConstructionQueueState.CurrentDeferClassificationVersion;
                     payloadChanged = true;
@@ -348,6 +380,36 @@ internal sealed class AutomationQueueItemFailure(
                     }
                 }
 
+                if (IsConstructionQueueTask(item.TaskName) || IsResourceUpgradeTask(item.TaskName))
+                {
+                    if (repeatedWaitBackoff is not null)
+                    {
+                        updatedPayload[BotOptionPayloadKeys.ConstructionDeferBackoffSignature] = repeatedWaitBackoff.Signature;
+                        updatedPayload[BotOptionPayloadKeys.ConstructionDeferBackoffCount] = repeatedWaitBackoff.Count.ToString();
+                        updatedPayload[BotOptionPayloadKeys.ConstructionDeferBackoffResourceFingerprint] =
+                            ConstructionRepeatedWaitBackoffPolicy.CreateResourceObservationFingerprint(updatedPayload);
+                        updatedPayload[BotOptionPayloadKeys.ConfirmedEmptyResourceValidationFingerprint] =
+                            ConstructionQueueState.CreateConfirmedEmptyResourceValidationFingerprint(
+                                item.TaskName,
+                                updatedPayload);
+                        payloadChanged = true;
+                        if (repeatedWaitBackoff.Count > 1)
+                        {
+                            port.Log(
+                                $"[construction-backoff] repeated identical resource wait "
+                                + $"id={item.Id} task='{item.TaskName}' count={repeatedWaitBackoff.Count} "
+                                + $"nextTrySeconds={queueWaitDelay.TotalSeconds:F0}; browser navigation is suppressed until then.");
+                        }
+                    }
+                    else
+                    {
+                        payloadChanged |= updatedPayload.Remove(BotOptionPayloadKeys.ConstructionDeferBackoffSignature);
+                        payloadChanged |= updatedPayload.Remove(BotOptionPayloadKeys.ConstructionDeferBackoffCount);
+                        payloadChanged |= updatedPayload.Remove(BotOptionPayloadKeys.ConstructionDeferBackoffResourceFingerprint);
+                        payloadChanged |= updatedPayload.Remove(BotOptionPayloadKeys.ConfirmedEmptyResourceValidationFingerprint);
+                    }
+                }
+
                 var isCropShortageDefer = (IsConstructionQueueTask(item.TaskName) || IsResourceUpgradeTask(item.TaskName))
                     && ConstructionQueueState.IsCropShortageDeferMessage(ex.Message);
                 if (isCropShortageDefer)
@@ -396,11 +458,20 @@ internal sealed class AutomationQueueItemFailure(
                     }
                 }
 
+                if (string.Equals(item.TaskName, "construct_building", StringComparison.OrdinalIgnoreCase)
+                    && TryExtractPayloadInt(ex.Message, BotOptionPayloadKeys.BuildingConstructSlotId, out var confirmedEffectiveSlot))
+                {
+                    // The source item still has its original slot here. A generic defer-payload patch
+                    // may already carry the effective slot and would otherwise hide the rebind edge.
+                    port.RebindPendingBuildingUpgrades(item, confirmedEffectiveSlot);
+                }
+
                 if (payloadChanged)
                 {
                     var payloadPersisted = port.PatchDeferredPayload(item, updatedPayload);
                     item.Payload = updatedPayload;
-                    if (IsConstructionQueueTask(item.TaskName) && !payloadPersisted)
+                    if ((IsConstructionQueueTask(item.TaskName) || IsResourceUpgradeTask(item.TaskName))
+                        && !payloadPersisted)
                     {
                         port.Log(
                             $"[construction-queue] construction payload persistence failed " +
@@ -466,7 +537,7 @@ internal sealed class AutomationQueueItemFailure(
                 {
                     try
                     {
-                        await port.RefreshConstructionStatusAfterDeferAsync();
+                        await port.RefreshConstructionStatusAfterDeferAsync(item);
                     }
                     catch (Exception refreshEx)
                     {

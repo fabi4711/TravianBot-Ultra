@@ -320,9 +320,11 @@ internal sealed class SettingsExchangeService
         {
             BotOptionPayloadKeys.SessionPacingEnabled,
             BotOptionPayloadKeys.SmartSleepEnabled,
+            BotOptionPayloadKeys.SmartSleepMaxRuntimeEnabled,
             BotOptionPayloadKeys.SmartSleepWakeWhenConstructionQueueClears,
             BotOptionPayloadKeys.ActionPacingEnabled,
             BotOptionPayloadKeys.ContinuousKeepAliveEnabled,
+            BotOptionPayloadKeys.ParkOnDorf2WhileIdle,
             BotOptionPayloadKeys.VillageStatusSweepEnabled,
             BotOptionPayloadKeys.VillageStatusSweepDorf1Enabled,
             BotOptionPayloadKeys.VillageStatusSweepDorf2Enabled,
@@ -351,6 +353,9 @@ internal sealed class SettingsExchangeService
         Add(Hours(BotOptionPayloadKeys.SessionPacingAllowedHours, "Pacing"));
         Add(Int(BotOptionPayloadKeys.SessionPacingHoursVariationPercent, "Pacing", 0, 30, [0, 10, 20, 30]));
         Add(Int(BotOptionPayloadKeys.SmartSleepMinimumOpportunityMinutes, "Pacing", 1, 1440));
+        Add(Int(BotOptionPayloadKeys.SmartSleepMaxRuntimeMinutes, "Pacing", 1, 10080));
+        Add(Int(BotOptionPayloadKeys.SmartSleepMaxRuntimeSleepMinutes, "Pacing", 1, 1440));
+        Add(Int(BotOptionPayloadKeys.SmartSleepMaxRuntimeVariationPercent, "Pacing", 0, 50, [0, 10, 20, 30, 40, 50]));
         Add(Int(BotOptionPayloadKeys.SmartSleepWakeBeforeMinutes, "Pacing", 0, 1440));
         Add(Int(BotOptionPayloadKeys.SmartSleepWakeAfterMinutes, "Pacing", 0, 1440));
         Add(Int(BotOptionPayloadKeys.SmartSleepFallbackMinMinutes, "Pacing", 1, 10080));

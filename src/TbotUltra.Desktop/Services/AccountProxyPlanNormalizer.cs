@@ -7,11 +7,14 @@ public static class AccountProxyPlanNormalizer
         var result = source.Clone();
         result.VariationPercent = Math.Clamp(result.VariationPercent, 0, 49);
         result.Assignments = result.Assignments
-            .Where(assignment => !string.IsNullOrWhiteSpace(assignment.ProxyId))
-            .GroupBy(assignment => assignment.ProxyId.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(assignment => assignment.Kind == ProxyRouteKind.OwnIp || !string.IsNullOrWhiteSpace(assignment.ProxyId))
+            .GroupBy(assignment => assignment.Kind == ProxyRouteKind.OwnIp
+                ? "own-ip"
+                : $"proxy:{assignment.ProxyId.Trim()}", StringComparer.OrdinalIgnoreCase)
             .Select(group => new AccountProxyAssignment
             {
-                ProxyId = group.Key,
+                Kind = group.First().Kind,
+                ProxyId = group.First().Kind == ProxyRouteKind.OwnIp ? string.Empty : group.First().ProxyId.Trim(),
                 TimeBlocks = NormalizeBlocks(group.SelectMany(item => item.TimeBlocks)),
             })
             .ToList();

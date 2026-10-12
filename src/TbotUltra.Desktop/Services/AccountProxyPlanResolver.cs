@@ -19,7 +19,9 @@ public static class AccountProxyPlanResolver
             runtime.RecoveryOverrideProxyId,
             runtime.RecoveryOverrideUntilUtc ?? scheduled.NextTransitionAt,
             scheduled.ProxyId,
-            "Using the recovery proxy until the next scheduled sleep switch.");
+            "Using the recovery proxy until the next scheduled sleep switch.",
+            ProxyRouteKind.Proxy,
+            scheduled.Kind);
     }
 
     public static ProxyPlanResolution Resolve(
@@ -36,26 +38,34 @@ public static class AccountProxyPlanResolver
         var transitions = BuildTransitions(plan, accountName, at.AddDays(-8), at.AddDays(8));
         var latest = transitions.LastOrDefault(item => item.At <= at);
         var proxyId = latest?.ProxyId ?? string.Empty;
+        var kind = latest?.Kind;
         if (latest is null && string.IsNullOrWhiteSpace(proxyId))
         {
             proxyId = fallbackProxyId;
+            kind = string.IsNullOrWhiteSpace(proxyId) ? null : ProxyRouteKind.Proxy;
         }
 
         if (latest is null && string.IsNullOrWhiteSpace(proxyId))
         {
             proxyId = plan.Assignments[0].ProxyId;
+            kind = plan.Assignments[0].Kind;
         }
 
-        var next = transitions.FirstOrDefault(item => item.At > at && !string.Equals(item.ProxyId, proxyId, StringComparison.OrdinalIgnoreCase));
+        var next = transitions.FirstOrDefault(item => item.At > at
+            && (item.Kind != kind || !string.Equals(item.ProxyId, proxyId, StringComparison.OrdinalIgnoreCase)));
         return new ProxyPlanResolution(
             proxyId ?? string.Empty,
             next?.At,
             next?.ProxyId ?? string.Empty,
             latest is null
                 ? "Using the configured fallback proxy."
-                : string.IsNullOrWhiteSpace(proxyId)
-                    ? "No proxy is scheduled; direct connection is selected."
-                    : "Using the latest varied schedule boundary.");
+                : kind == ProxyRouteKind.OwnIp
+                    ? "Own IP is scheduled."
+                    : kind is null
+                        ? "No proxy is scheduled; direct connection is selected."
+                        : "Using the latest varied schedule boundary.",
+            kind,
+            next?.Kind);
     }
 
     private static List<ProxyTransition> BuildTransitions(AccountProxyPlan plan, string accountName, DateTimeOffset from, DateTimeOffset to)
@@ -89,6 +99,7 @@ public static class AccountProxyPlanResolver
         var result = new List<ProxyTransition>();
         var activeCounts = new Dictionary<int, int>();
         string? previousProxyId = null;
+        ProxyRouteKind? previousKind = null;
         var hasPrevious = false;
         foreach (var group in events.OrderBy(item => item.At).GroupBy(item => item.At))
         {
@@ -107,10 +118,13 @@ public static class AccountProxyPlanResolver
 
             var selectedIndex = activeCounts.Keys.Order().Cast<int?>().FirstOrDefault();
             var selectedProxyId = selectedIndex is null ? string.Empty : plan.Assignments[selectedIndex.Value].ProxyId;
-            if (!hasPrevious || !string.Equals(previousProxyId, selectedProxyId, StringComparison.OrdinalIgnoreCase))
+            ProxyRouteKind? selectedKind = selectedIndex is null ? null : plan.Assignments[selectedIndex.Value].Kind;
+            if (!hasPrevious || previousKind != selectedKind
+                || !string.Equals(previousProxyId, selectedProxyId, StringComparison.OrdinalIgnoreCase))
             {
-                result.Add(new ProxyTransition(group.Key, selectedProxyId));
+                result.Add(new ProxyTransition(group.Key, selectedProxyId, selectedKind));
                 previousProxyId = selectedProxyId;
+                previousKind = selectedKind;
                 hasPrevious = true;
             }
         }
@@ -143,6 +157,6 @@ public static class AccountProxyPlanResolver
         return (z / (double)ulong.MaxValue * 2) - 1;
     }
 
-    private sealed record ProxyTransition(DateTimeOffset At, string ProxyId);
+    private sealed record ProxyTransition(DateTimeOffset At, string ProxyId, ProxyRouteKind? Kind);
     private sealed record ProxyBoundaryEvent(DateTimeOffset At, int AssignmentIndex, int Delta);
 }

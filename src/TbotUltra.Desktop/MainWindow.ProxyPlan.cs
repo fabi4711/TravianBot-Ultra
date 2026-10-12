@@ -102,10 +102,11 @@ public partial class MainWindow
         runtime.RecoveryOverrideUntilUtc = null;
         ProxyPlanStore.SaveRuntime(account.Name, runtime);
         var resolution = AccountProxyPlanResolver.Resolve(plan, account.Name, wakeAt, runtime);
-        if (string.IsNullOrWhiteSpace(resolution.ProxyId))
+        if (resolution.Kind != ProxyRouteKind.Proxy)
         {
             if (!account.ProxyEnabled)
             {
+                ApplyResolvedProxy(account, plan, library, wakeAt, "scheduled sleep wake");
                 return;
             }
         }
@@ -113,6 +114,7 @@ public partial class MainWindow
         if (target is not null && account.ProxyEnabled
             && ProxyParser.SameConnection(account.ProxyServer, target.Server))
         {
+            ApplyResolvedProxy(account, plan, library, wakeAt, "scheduled sleep wake");
             return;
         }
 
@@ -125,7 +127,10 @@ public partial class MainWindow
             AppendLog($"[proxy-plan] browser shutdown before scheduled switch failed: {ex.Message}");
         }
 
-        ApplyResolvedProxy(account, plan, library, wakeAt, "scheduled sleep wake");
+        if (!ApplyResolvedProxy(account, plan, library, wakeAt, "scheduled sleep wake"))
+        {
+            AppendLog("[ALARM] [proxy-plan] scheduled connection switch could not be applied.");
+        }
     }
 
     private bool ApplyResolvedProxy(
@@ -137,7 +142,7 @@ public partial class MainWindow
     {
         var runtime = ProxyPlanStore.LoadRuntime(account.Name);
         var resolution = AccountProxyPlanResolver.Resolve(plan, account.Name, at, runtime);
-        if (string.IsNullOrWhiteSpace(resolution.ProxyId))
+        if (resolution.Kind != ProxyRouteKind.Proxy)
         {
             if (account.NeverUseOwnIp)
             {
@@ -151,7 +156,7 @@ public partial class MainWindow
                 changed.ProxyEnabled = false;
                 changed.ProxyId = string.Empty;
                 _accountStore.SaveAccount(changed, setActive: false);
-                AppendLog($"[proxy-plan] {reason}: no proxy is scheduled; using the allowed direct connection.");
+                AppendLog($"[proxy-plan] {reason}: using {(resolution.Kind == ProxyRouteKind.OwnIp ? "scheduled Own IP" : "allowed direct connection during a schedule gap")}.");
             }
 
             runtime.ActiveProxyId = string.Empty;
@@ -164,7 +169,7 @@ public partial class MainWindow
         if (target is null || !ProxyParser.TryBuild(target.Server, out _, out _))
         {
             AppendLog($"[ALARM] [proxy-plan] {reason} could not resolve a valid proxy.");
-            return !account.NeverUseOwnIp;
+            return false;
         }
 
         if (!ProxyParser.SameConnection(account.ProxyServer, target.Server) || !account.ProxyEnabled)

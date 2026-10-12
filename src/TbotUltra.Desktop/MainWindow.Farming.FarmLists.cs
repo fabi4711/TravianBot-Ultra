@@ -30,6 +30,7 @@ public partial class MainWindow
     private bool _farmListLastSentLimitEnabled = FarmingDefaults.LastSentLimitEnabled;
     private int _farmListLastSentLimitHours = FarmingDefaults.DefaultLastSentLimitHours;
     private bool _farmLossDestinationSelectionInProgress;
+    private int _farmHistoryLoadGeneration;
 
     private static bool IsRealFarmListRow(FarmListStatusRow row)
         => FarmListsViewModel.IsRealRow(row);
@@ -113,8 +114,6 @@ public partial class MainWindow
         }
 
         await ApplyFarmListsViewToUiAsync(result);
-        await Dispatcher.InvokeAsync(() =>
-            UpdateSelectedCachedTimerStatus(status => status with { FarmLists = result.Lists }));
         return true;
     }
 
@@ -195,13 +194,6 @@ public partial class MainWindow
         });
     }
 
-    private async Task ApplyCachedFarmListsToUiAsync(IReadOnlyList<FarmListOverview> lists)
-    {
-        var options = ApplySelectedVillageToOptions(LoadBotOptions());
-        var request = await CreateFarmListsViewRequestAsync(options);
-        await ApplyFarmListsViewToUiAsync(_farmListsWorkflow.ProjectCached(request, lists));
-    }
-
     // After the auto-loop send_farmlists task actually dispatches a list it defers with a
     // "cooldown active" message. The worker reads the new timer on its side but the desktop
     // rows are never updated, so they keep showing "Ready" and Send Now stays clickable until
@@ -229,12 +221,6 @@ public partial class MainWindow
             return;
         }
 
-        var sendAllLists = string.Equals(
-            FarmingDefaults.NormalizeSendMode(LoadBotOptions().ContinuousFarmSendMode),
-            FarmingDefaults.SendModeAllAtOnce,
-            StringComparison.Ordinal);
-        var attemptedKeys = _farmListsWorkflow.GetAutoDispatchKeys(_farmLists, sendAllLists);
-
         try
         {
             // On a real send the worker just read the farm page and wrote a fresh snapshot — apply
@@ -244,20 +230,15 @@ public partial class MainWindow
             var snapshot = sendHappened
                 ? await TryApplyFarmListsSnapshotAsync(options)
                 : null;
-            if (snapshot is not null)
+            if (snapshot is null)
             {
-                if (sendAllLists)
-                {
-                    var dispatch = _farmListsWorkflow.ReconcileAutomaticDispatch(
-                        snapshot,
-                        attemptedKeys,
-                        options);
-                    await ApplyFarmListsViewToUiAsync(dispatch.View);
-                }
-                return;
+                await RefreshFarmListsFromServerAsync(options, _loopController.AcquireSessionScopeToken());
             }
 
-            await RefreshFarmListsFromServerAsync(options, _loopController.AcquireSessionScopeToken());
+            if (sendHappened)
+            {
+                await RefreshVisibleFarmListHistoryAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -702,6 +683,7 @@ public partial class MainWindow
             var options = ApplySelectedVillageToOptions(LoadBotOptions());
             await EnsureChromiumInstalledAsync();
             await _farmListsWorkflow.DispatchOneAsync(options, list, operationToken);
+            await RefreshVisibleFarmListHistoryAsync();
             UpdateFarmingUiState();
             CompleteOperation(operationId, operationSw, $"Sent '{list.Name}'.");
         }
@@ -737,16 +719,7 @@ public partial class MainWindow
             return;
         }
 
-        // Let the user pick how to send: only the toggled lists (paced, like continuous farming) or every
-        // list at once via Travian's "Start all farm lists" button.
-        var chooser = new SendAllFarmListsWindow(this);
-        if (chooser.ShowDialog() != true || chooser.Choice == SendAllFarmListsWindow.SendAllChoice.Cancel)
-        {
-            return;
-        }
-
-        var sendToggled = chooser.Choice == SendAllFarmListsWindow.SendAllChoice.Toggled;
-        if (sendToggled && !_farmLists.Any(row => IsRealFarmListRow(row) && row.IsEnabled))
+        if (!_farmLists.Any(row => IsRealFarmListRow(row) && row.IsEnabled))
         {
             AppendLog("[farm-list] Send all toggled: no farm lists are toggled on.");
             AppDialog.Show(this, "No farm lists are toggled on.", "Send farmlists", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -758,7 +731,7 @@ public partial class MainWindow
         var operationToken = _loopController.StartOperation("operation");
         SetFarmingFunctionRunning(true);
         BusyOverlay.ShowCancel = true;
-        ShowBusyOverlay("Send all now", sendToggled ? "Sending toggled farmlists..." : "Sending all farmlists...");
+        ShowBusyOverlay("Send all now", "Sending enabled farmlists...");
         try
         {
             var options = ApplySelectedVillageToOptions(LoadBotOptions());
@@ -767,11 +740,14 @@ public partial class MainWindow
             var dispatch = await _farmListsWorkflow.DispatchManyAsync(
                 viewRequest,
                 _farmLists.ToList(),
-                sendToggled,
                 operationToken);
             UpdateGoldClubInfo(dispatch.View.IsAvailable);
             await ApplyFarmListsViewToUiAsync(dispatch.View);
-            CompleteOperation(operationId, operationSw, $"Sent {(sendToggled ? "toggled" : "all")} farmlists ({dispatch.SentCount} list(s)).");
+            if (dispatch.SentCount > 0)
+            {
+                await RefreshVisibleFarmListHistoryAsync();
+            }
+            CompleteOperation(operationId, operationSw, $"Sent enabled farmlists ({dispatch.SentCount} list(s)).");
         }
         catch (OperationCanceledException)
         {
@@ -968,12 +944,167 @@ public partial class MainWindow
 
     private void UpdateNextFarmListSendDisplay()
     {
-        var farmingCard = _automationLoopTasks.FirstOrDefault(item =>
-            string.Equals(item.TaskName, QueueGroupCatalog.GetKey(QueueGroup.Farming), StringComparison.OrdinalIgnoreCase));
-        var hasScheduledSend = farmingCard?.HasTimer == true;
-        FarmingPanelControl.SetNextSendDisplay(hasScheduledSend
-            ? $"Next send: {farmingCard!.TimerText}"
+        if (!_isLoggedIn)
+        {
+            FarmingPanelControl.SetNextSendDisplay("Next send: --");
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var nextSendAtUtc = GetQueueSnapshotForUi()
+            .Where(item => string.Equals(item.TaskName, "send_farmlists", StringComparison.OrdinalIgnoreCase)
+                && item.Status == QueueStatus.Pending
+                && item.NextAttemptAt > now)
+            .OrderBy(item => item.NextAttemptAt)
+            .Select(item => (DateTimeOffset?)item.NextAttemptAt)
+            .FirstOrDefault();
+        FarmingPanelControl.SetNextSendDisplay(nextSendAtUtc.HasValue
+            ? $"Next send: {FormatNextTaskCountdown(nextSendAtUtc.Value - now)}"
             : "Next send: --");
+    }
+
+    private void ResetFarmListTimers()
+    {
+        try
+        {
+            var count = _farmListsWorkflow.ResetDispatchDeadlines(DateTimeOffset.UtcNow);
+            foreach (var row in _farmLists.Where(IsRealFarmListRow))
+            {
+                row.NextSendAtUtc = DateTimeOffset.UtcNow;
+            }
+
+            WakeContinuousFarmScheduling();
+            AppendLog($"[farm-list] reset bot send deadlines for {count} list(s); Travian cooldown, enabled state and intervals unchanged.");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[farm-list] could not reset send deadlines: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshFarmListHistoryAsync()
+    {
+        try
+        {
+            var generation = Interlocked.Increment(ref _farmHistoryLoadGeneration);
+            var context = await Dispatcher.InvokeAsync(() => (
+                AccountName: _accountStore.ActiveAccountName(),
+                ServerUrl: LoadBotOptions().BaseUrl));
+            var accountName = context.AccountName;
+            var serverUrl = context.ServerUrl;
+            var history = await _farmListsWorkflow.LoadHistoryAsync(serverUrl);
+            await Dispatcher.InvokeAsync(() =>
+            {
+                if (generation == Volatile.Read(ref _farmHistoryLoadGeneration)
+                    && string.Equals(accountName, _accountStore.ActiveAccountName(), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(serverUrl, LoadBotOptions().BaseUrl, StringComparison.OrdinalIgnoreCase))
+                {
+                    FarmingPanelControl.SetHistory(history);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[farm-list] could not load send history: {ex.Message}");
+        }
+    }
+
+    private async Task RefreshVisibleFarmListHistoryAsync()
+    {
+        if (await Dispatcher.InvokeAsync(() => FarmingPanelControl.IsHistoryVisible))
+        {
+            AppendLog("[farm-list] refreshing visible send history after confirmed dispatch.");
+            await RefreshFarmListHistoryAsync();
+        }
+    }
+
+    private void OnFarmListHistoryUpdated(FarmListHistoryUpdated update)
+    {
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_shutdownInProgress
+                || !string.Equals(update.AccountName, _accountStore.ActiveAccountName(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(update.ServerUrl, LoadBotOptions().BaseUrl, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            _ = RefreshVisibleFarmListHistoryAsync();
+        }, DispatcherPriority.Render);
+    }
+
+    private void ClearFarmListHistory()
+    {
+        var answer = AppDialog.Show(this,
+            "Clear all farm-list send history for this account and server? This will not change farm settings or timers.",
+            "Clear farming history", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            Interlocked.Increment(ref _farmHistoryLoadGeneration);
+            _farmListsWorkflow.ClearHistory(LoadBotOptions().BaseUrl);
+            _ = RefreshFarmListHistoryAsync();
+            AppendLog("[farm-list] cleared send history for the current account and server.");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"[farm-list] could not clear send history: {ex.Message}");
+        }
+    }
+
+    private void ResetVillageFarmListIntervals(FarmListStatusRow firstRow)
+    {
+        if (firstRow is null || !IsRealFarmListRow(firstRow))
+        {
+            return;
+        }
+
+        var min = FarmingDefaults.NormalizeDispatchDelayMinMinutes(
+            int.TryParse(_farmListsViewModel.DispatchDelayMinMinutes, out var parsedMin) ? parsedMin : 0);
+        var max = Math.Max(min, FarmingDefaults.NormalizeDispatchDelayMaxMinutes(
+            int.TryParse(_farmListsViewModel.DispatchDelayMaxMinutes, out var parsedMax) ? parsedMax : 0));
+        var answer = AppDialog.Show(this,
+            $"Reset all farm-list intervals for {firstRow.VillageHeaderText} to {min}–{max} minutes? Existing next-send deadlines will not change.",
+            "Reset village intervals", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (answer != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        var rows = _farmLists.Where(row => IsRealFarmListRow(row)
+            && row.VillageOrdinal == firstRow.VillageOrdinal
+            && string.Equals(row.VillageName, firstRow.VillageName, StringComparison.OrdinalIgnoreCase)).ToList();
+        var options = LoadBotOptions();
+        _suppressFarmListUiRefresh = true;
+        try
+        {
+            foreach (var row in rows)
+            {
+                if (!_farmListsWorkflow.PersistDispatchInterval(row, min, max, options, preserveDeadline: true))
+                {
+                    continue;
+                }
+
+                row.IntervalMinMinutesText = min.ToString();
+                row.IntervalMaxMinutesText = max.ToString();
+            }
+        }
+        finally
+        {
+            _suppressFarmListUiRefresh = false;
+        }
+
+        AppendLog($"[farm-list] reset {rows.Count} interval(s) for village '{firstRow.VillageName}' to {min}-{max} minutes; current deadlines preserved.");
+        UpdateFarmingUiState();
     }
 
     private void WakeContinuousFarmScheduling()

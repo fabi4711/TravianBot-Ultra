@@ -43,6 +43,39 @@ public sealed class QueueDisplayProjectionTests
     }
 
     [Fact]
+    public void Build_HistoryContainsOnlyTerminalConstructionItems()
+    {
+        var construction = Item(QueueStatus.Succeeded, runtimeOnly: false);
+        construction.Group = QueueGroup.Construction;
+        var account = Item(QueueStatus.Succeeded, runtimeOnly: true);
+        account.Group = QueueGroup.Account;
+        var farming = Item(QueueStatus.Failed, runtimeOnly: true);
+        farming.Group = QueueGroup.Farming;
+
+        var projection = QueueDisplayProjection.Build([construction, account, farming], Row);
+
+        Assert.Same(construction, Assert.Single(projection.HistoryItems));
+    }
+
+    [Fact]
+    public void Build_SortsHistoryNewestCompletedItemFirst()
+    {
+        var oldest = Item(QueueStatus.Succeeded, runtimeOnly: false);
+        oldest.CreatedAt = new DateTimeOffset(2026, 10, 10, 12, 0, 0, TimeSpan.Zero);
+        oldest.UpdatedAt = new DateTimeOffset(2026, 10, 11, 1, 0, 0, TimeSpan.Zero);
+        var newest = Item(QueueStatus.Succeeded, runtimeOnly: false);
+        newest.CreatedAt = oldest.CreatedAt.AddHours(-1);
+        newest.UpdatedAt = oldest.UpdatedAt.AddHours(2);
+        var middle = Item(QueueStatus.Succeeded, runtimeOnly: false);
+        middle.CreatedAt = oldest.CreatedAt.AddHours(1);
+        middle.UpdatedAt = oldest.UpdatedAt.AddHours(1);
+
+        var projection = QueueDisplayProjection.Build([oldest, newest, middle], Row);
+
+        Assert.Equal([newest.Id, middle.Id, oldest.Id], projection.HistoryItems.Select(item => item.Id));
+    }
+
+    [Fact]
     [Trait("Category", "Performance")]
     public void Build_RepresentativeQueueProjectionStaysBelowTheUiBudget()
     {

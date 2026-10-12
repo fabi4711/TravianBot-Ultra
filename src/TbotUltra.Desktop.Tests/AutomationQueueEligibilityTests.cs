@@ -24,15 +24,53 @@ public sealed class AutomationQueueEligibilityTests : IDisposable
     }
 
     [Fact]
-    public void IsAllowed_RejectsFarmListWithoutVillageIdentity()
+    public void IsAllowed_AccountWideFarmListDoesNotRequireVillageIdentity()
     {
-        var (eligibility, _, _, _) = CreateEligibility();
+        var (eligibility, _, store, village) = CreateEligibility();
+        store.SetEnabledGroups(village, ["farming"]);
 
-        Assert.False(eligibility.IsAllowed(new QueueItem
+        Assert.True(eligibility.IsAllowed(new QueueItem
         {
             TaskName = "send_farmlists",
             Group = QueueGroup.Farming,
         }));
+    }
+
+    [Fact]
+    public void IsAllowed_AccountWideFarmListRunsWhenAnotherVillageHasFarmingEnabled()
+    {
+        var (eligibility, port, store, originalVillage) = CreateEligibility();
+        var enabledVillage = new Info(VillageKey.FromCoords(3, 4), "Other", 3, 4, IsCapital: false);
+        store.Merge([originalVillage, enabledVillage]);
+        store.SetEnabledGroups(originalVillage, ["hero"]);
+        store.SetEnabledGroups(enabledVillage, ["farming"]);
+        port.VillageKey = originalVillage.Key;
+        var now = DateTimeOffset.UtcNow;
+        var dispatch = new QueueItem
+        {
+            Id = Guid.NewGuid(),
+            TaskName = "send_farmlists",
+            Group = QueueGroup.Farming,
+            Status = QueueStatus.Pending,
+            NextAttemptAt = now.AddSeconds(-1),
+        };
+
+        Assert.True(eligibility.IsAllowed(dispatch));
+        var selection = AutomationQueueSelector.Select(
+            new AutomationQueueSelectionInput(
+                [new ContinuousLoopSelectionCandidate(
+                    dispatch, originalVillage.Key, eligibility.IsAllowed(dispatch), IsUtilityEnabled: false)],
+                [QueueGroup.Farming],
+                new VillageBatchSnapshot(enabledVillage.Key, 0),
+                ActiveVillageKey: enabledVillage.Key,
+                Now: now,
+                ShortVillageDeferSeconds: 60,
+                Preview: false),
+            (_, _, _) => null);
+        Assert.Equal(dispatch.Id, selection.Selected?.Id);
+
+        store.SetEnabledGroups(enabledVillage, ["hero"]);
+        Assert.False(eligibility.IsAllowed(dispatch));
     }
 
     [Fact]
@@ -46,6 +84,20 @@ public sealed class AutomationQueueEligibilityTests : IDisposable
 
         store.SetEnabled(village, enabled: false);
         Assert.False(eligibility.IsAllowed(new QueueItem { Group = QueueGroup.Hero }));
+    }
+
+    [Fact]
+    public void IsAllowed_QueuedDemolitionDoesNotRequireGroupToggle()
+    {
+        var (eligibility, port, store, village) = CreateEligibility();
+        port.VillageKey = village.Key;
+        store.SetEnabledGroups(village, ["hero"]);
+
+        Assert.True(eligibility.IsAllowed(new QueueItem
+        {
+            TaskName = "demolish_building_to_level",
+            Group = QueueGroup.Demolish,
+        }));
     }
 
     [Fact]
@@ -67,6 +119,11 @@ public sealed class AutomationQueueEligibilityTests : IDisposable
         store.SetEnabledGroups(village, ["farming"]);
 
         Assert.False(eligibility.IsGroupEnabled(village.Key, QueueGroup.Farming));
+        Assert.False(eligibility.IsAllowed(new QueueItem
+        {
+            TaskName = "send_farmlists",
+            Group = QueueGroup.Farming,
+        }));
     }
 
     private (AutomationQueueEligibility Eligibility, InMemoryPort Port, VillageSettingsStore Store, Info Village)

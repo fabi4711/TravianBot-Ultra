@@ -80,7 +80,7 @@ public partial class MainWindow
 
     /// <summary>
     /// Persists the current attribute priority order to the active account's settings overlay.
-    /// Called from <see cref="Views.HeroPanel"/> after a drag-drop reorder.
+    /// Called after the user changes attribute priority or an attribute maximum.
     /// </summary>
     internal void PersistHeroPriorityToConfig()
     {
@@ -405,8 +405,10 @@ public partial class MainWindow
     {
         _automationDesk.Updated -= AutomationDesk_Updated;
         _botService.FarmLossDestinationChanged -= OnFarmLossDestinationChanged;
+        _botService.FarmListHistoryUpdated -= OnFarmListHistoryUpdated;
         _botService.ActiveVillageVerified -= OnActiveVillageVerified;
         _botService.ConstructionQueueObserved -= OnConstructionQueueObserved;
+        _botService.WatchtowerStatusObserved -= OnWatchtowerStatusObserved;
         TravianClient.HeroInventoryUpdated -= OnWorkerHeroInventoryUpdated;
         TravianClient.HeroHpUpdated -= OnWorkerHeroHpUpdated;
         TravianClient.HeroStatusUpdated -= OnWorkerHeroStatusUpdated;

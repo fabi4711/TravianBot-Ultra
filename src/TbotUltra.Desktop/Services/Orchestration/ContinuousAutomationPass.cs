@@ -27,6 +27,7 @@ internal interface IContinuousAutomationPassPort
     ValueTask MaybeCheckInboxAsync(CancellationToken cancellationToken);
     void LogSmartSleepBlockedByReadyTask(QueueItem item);
     ValueTask MaybeKeepBrowserFreshAsync(BotOptions options, CancellationToken cancellationToken);
+    ValueTask MaybeParkOnDorf2Async(BotOptions options, DateTimeOffset? nextTaskAtUtc, CancellationToken cancellationToken);
     bool TryRequestSmartSleep(DateTimeOffset? trustedDeadlineUtc);
     void Log(string message);
     string FormatException(Exception exception);
@@ -208,6 +209,13 @@ internal sealed class ContinuousAutomationPass : IAutomationModePassPort
                 waitDelay,
                 options,
                 networkBackoff: false);
+            if (!smartSleepRequested && options.ParkOnDorf2WhileIdle)
+            {
+                await _port.MaybeParkOnDorf2Async(
+                    options,
+                    waitDelay is { } nextTaskDelay ? nowForDeadline.Add(nextTaskDelay) : null,
+                    cancellationToken);
+            }
             if (_runtime.ShouldPublishIdleHeartbeat(IdleHeartbeatInterval))
             {
                 _port.Log($"[LOOP {passId}] idle — nothing ready, waiting {totalSeconds}s");
@@ -266,7 +274,8 @@ internal sealed class ContinuousAutomationPass : IAutomationModePassPort
         AutomationRunContext context,
         AutomationCandidate action,
         AutomationActionOutcome outcome,
-        CancellationToken cancellationToken) => ValueTask.CompletedTask;
+        CancellationToken cancellationToken)
+        => ValueTask.CompletedTask;
 
     private void LogSelection(long passId, QueueItem item)
     {

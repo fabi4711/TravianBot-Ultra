@@ -6,6 +6,30 @@ namespace TbotUltra.Desktop.Tests;
 public sealed class ConstructionLoginFillSourceTests
 {
     [Fact]
+    public void PostLoginVillageRound_SatisfiesPendingConstructionSyncOnlyAfterFinalVisit()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            ProjectRootLocator.FindProjectRoot(),
+            "src", "TbotUltra.Desktop", "MainWindow.ContinuousLoop.cs"));
+        var start = source.IndexOf(
+            "private async ValueTask<VillageStatusRoundVisitResult> VisitVillageStatusRoundAsync(",
+            StringComparison.Ordinal);
+        var end = source.IndexOf("    private AutomationRunContext CreateAutomationRunContext(", start, StringComparison.Ordinal);
+
+        Assert.True(start >= 0 && end > start);
+        var visit = source[start..end];
+        var cached = visit.IndexOf("CacheVillageStatus(status, targetVillage.Name", StringComparison.Ordinal);
+        var verified = visit.IndexOf("ConstructionStatusSyncPolicy.IsCompleteFinalVisit(", StringComparison.Ordinal);
+        var synchronized = visit.IndexOf("_automationDesk.TryMarkConstructionStatusSynchronized(", StringComparison.Ordinal);
+
+        Assert.True(cached >= 0);
+        Assert.True(verified > cached);
+        Assert.True(synchronized > verified);
+        Assert.Contains("visit.ShouldContinue", visit, StringComparison.Ordinal);
+        Assert.Contains("constructionSyncGeneration.HasValue", visit, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LoginFlow_PreparesOnlyTheLiveVerifiedBrowserVillage()
     {
         var projectRoot = ProjectRootLocator.FindProjectRoot();
@@ -90,6 +114,31 @@ public sealed class ConstructionLoginFillSourceTests
 
         Assert.True(prepareIndex >= 0);
         Assert.True(refreshIndex > prepareIndex);
+    }
+
+    [Fact]
+    public void PostDeferRefresh_CannotReleaseItsOwnConstructionWait()
+    {
+        var projectRoot = ProjectRootLocator.FindProjectRoot();
+        var deferredRefreshSource = File.ReadAllText(Path.Combine(
+            projectRoot,
+            "src",
+            "TbotUltra.Desktop",
+            "MainWindow.DeferredRefresh.cs"));
+        var villageWorkingSource = File.ReadAllText(Path.Combine(
+            projectRoot,
+            "src",
+            "TbotUltra.Desktop",
+            "MainWindow.VillageWorking.cs"));
+
+        Assert.Contains(
+            "ConstructionStatusObservationOrigin.PostDeferredAttempt",
+            deferredRefreshSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ConstructionQueueState.CanRefreshDeferredWaits(observationOrigin)",
+            villageWorkingSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]

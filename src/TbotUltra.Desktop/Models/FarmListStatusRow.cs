@@ -5,6 +5,13 @@ namespace TbotUltra.Desktop.Models;
 
 public sealed class FarmListStatusRow : INotifyPropertyChanged
 {
+    private readonly TimeProvider _timeProvider;
+
+    public FarmListStatusRow(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
     private bool _isEnabled;
     private string _name = string.Empty;
     private string _villageName = string.Empty;
@@ -15,6 +22,7 @@ public sealed class FarmListStatusRow : INotifyPropertyChanged
     private int _totalFarmCount;
     private int? _capacity;
     private int? _remainingSeconds;
+    private DateTimeOffset? _remainingUntilUtc;
     private DateTimeOffset? _lastSentAtUtc;
     private DateTimeOffset? _nextSendAtUtc;
     private string _intervalMinMinutesText = string.Empty;
@@ -416,6 +424,9 @@ public sealed class FarmListStatusRow : INotifyPropertyChanged
         set
         {
             var normalized = value.HasValue ? Math.Max(0, value.Value) : (int?)null;
+            _remainingUntilUtc = normalized is > 0
+                ? _timeProvider.GetUtcNow().AddSeconds(normalized.Value)
+                : null;
             if (_remainingSeconds == normalized)
             {
                 return;
@@ -528,12 +539,28 @@ public sealed class FarmListStatusRow : INotifyPropertyChanged
             changed = true;
         }
 
-        if (!HasTimer || RemainingSeconds is null)
+        if (_remainingUntilUtc is null)
         {
             return changed;
         }
 
-        RemainingSeconds = RemainingSeconds.Value - 1;
+        var remaining = Math.Max(0, (int)Math.Ceiling(
+            (_remainingUntilUtc.Value - _timeProvider.GetUtcNow()).TotalSeconds));
+        if (_remainingSeconds == remaining)
+        {
+            return changed;
+        }
+
+        _remainingSeconds = remaining;
+        if (remaining == 0)
+        {
+            _remainingUntilUtc = null;
+        }
+        OnPropertyChanged(nameof(RemainingSeconds));
+        OnPropertyChanged(nameof(HasTimer));
+        OnPropertyChanged(nameof(IsReady));
+        OnPropertyChanged(nameof(TimerText));
+        OnPropertyChanged(nameof(CanSendNow));
         return true;
     }
 

@@ -199,8 +199,7 @@ public sealed class TroopTrainingQuickVillageRow : BaseViewModel
 
         cell.IsEnabled = building.Enabled;
         cell.SelectedTroop = building.TroopType;
-        if (cell.TroopOptions.Count > 0
-            && !cell.TroopOptions.Any(item => string.Equals(item, cell.SelectedTroop, StringComparison.OrdinalIgnoreCase)))
+        if (string.IsNullOrWhiteSpace(cell.SelectedTroop) && cell.TroopOptions.Count > 0)
         {
             cell.SelectedTroop = cell.TroopOptions[0];
         }

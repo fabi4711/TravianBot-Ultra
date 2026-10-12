@@ -30,6 +30,12 @@ public enum ConstructionDeferReason
     Retry,
 }
 
+public enum ConstructionStatusObservationOrigin
+{
+    Independent,
+    PostDeferredAttempt,
+}
+
 public sealed record ConstructionQueueSnapshot(
     ConstructionQueueKnowledge Knowledge,
     int ActiveCount,
@@ -57,6 +63,9 @@ public static class ConstructionQueueState
 {
     public const string CurrentDeferClassificationVersion = "3";
     private const string PageTimerWaitReason = "page_timer";
+
+    public static bool CanRefreshDeferredWaits(ConstructionStatusObservationOrigin observationOrigin) =>
+        observationOrigin == ConstructionStatusObservationOrigin.Independent;
 
     public static bool SupportsIndependentConstructionCategories(VillageStatus? status)
     {
@@ -252,12 +261,52 @@ public static class ConstructionQueueState
         return IsQueueOccupancyDeferred(item);
     }
 
-    public static bool ShouldPrepareConfirmedEmptyQueueHead(QueueItem item, DateTimeOffset now)
+    public static bool ShouldPrepareConfirmedEmptyQueueHead(
+        QueueItem item,
+        DateTimeOffset now,
+        ConstructionStatusObservationOrigin observationOrigin = ConstructionStatusObservationOrigin.Independent)
     {
-        return item.NextAttemptAt > now
-            && ResolveDeferReason(item) == ConstructionDeferReason.Resources
-            && item.Payload.TryGetValue(BotOptionPayloadKeys.UpgradeWaitReason, out var waitReason)
-            && string.Equals(waitReason, PageTimerWaitReason, StringComparison.OrdinalIgnoreCase);
+        if (!CanRefreshDeferredWaits(observationOrigin)
+            || item.NextAttemptAt <= now
+            || ResolveDeferReason(item) != ConstructionDeferReason.Resources
+            || !item.Payload.TryGetValue(BotOptionPayloadKeys.UpgradeWaitReason, out var waitReason)
+            || !string.Equals(waitReason, PageTimerWaitReason, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var currentFingerprint = CreateConfirmedEmptyResourceValidationFingerprint(item);
+        return !item.Payload.TryGetValue(
+                BotOptionPayloadKeys.ConfirmedEmptyResourceValidationFingerprint,
+                out var validatedFingerprint)
+            || !string.Equals(validatedFingerprint, currentFingerprint, StringComparison.Ordinal);
+    }
+
+    public static bool IsWatchtowerTask(string? taskName) =>
+        string.Equals(taskName, "upgrade_watchtowers_to_level", StringComparison.OrdinalIgnoreCase);
+
+    public static string CreateConfirmedEmptyResourceValidationFingerprint(QueueItem item) =>
+        CreateConfirmedEmptyResourceValidationFingerprint(item.TaskName, item.Payload);
+
+    public static string CreateConfirmedEmptyResourceValidationFingerprint(
+        string taskName,
+        IReadOnlyDictionary<string, string> payload)
+    {
+        static string Value(IReadOnlyDictionary<string, string> values, string key) =>
+            values.TryGetValue(key, out var value) ? value.Trim() : "-";
+
+        return string.Join(
+            '|',
+            taskName.Trim().ToLowerInvariant(),
+            Value(payload, BotOptionPayloadKeys.BuildingConstructSlotId),
+            Value(payload, BotOptionPayloadKeys.BuildingConstructGid),
+            Value(payload, BotOptionPayloadKeys.BuildingUpgradeSlotId),
+            Value(payload, BotOptionPayloadKeys.BuildingUpgradeTargetLevel),
+            Value(payload, BotOptionPayloadKeys.UpgradeBlockedLabel),
+            Value(payload, BotOptionPayloadKeys.UpgradeRequiredWood),
+            Value(payload, BotOptionPayloadKeys.UpgradeRequiredClay),
+            Value(payload, BotOptionPayloadKeys.UpgradeRequiredIron),
+            Value(payload, BotOptionPayloadKeys.UpgradeRequiredCrop));
     }
 
     public static QueueItem? SelectFirstUnstartedHead(IEnumerable<QueueItem> items)
@@ -274,7 +323,8 @@ public static class ConstructionQueueState
             .Select(village => SelectFirstUnstartedHead(village.Select(entry => entry.Item)))
             .Where(head => head is not null
                 && head.NextAttemptAt > now
-                && ResolveDeferReason(head) == ConstructionDeferReason.Resources)
+                && ResolveDeferReason(head) == ConstructionDeferReason.Resources
+                && ConstructionRepeatedWaitBackoffPolicy.AllowsEarlyResourceObservationRelease(head.Payload))
             .Cast<QueueItem>()
             .ToList();
     }

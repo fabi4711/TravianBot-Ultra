@@ -43,8 +43,13 @@ public sealed class PacingSettingsViewModel : BaseViewModel
     private bool _continuousKeepAliveEnabled = PacingDefaults.ContinuousKeepAliveEnabled;
     private string _continuousKeepAliveMinMinutes = PacingDefaults.ContinuousKeepAliveMinMinutes.ToString(CultureInfo.InvariantCulture);
     private string _continuousKeepAliveMaxMinutes = PacingDefaults.ContinuousKeepAliveMaxMinutes.ToString(CultureInfo.InvariantCulture);
+    private bool _parkOnDorf2WhileIdle = PacingDefaults.ParkOnDorf2WhileIdle;
     private bool _sessionPacingEnabled = PacingDefaults.SessionPacingEnabled;
     private bool _smartSleepEnabled = PacingDefaults.SmartSleepEnabled;
+    private bool _smartSleepMaxRuntimeEnabled = PacingDefaults.SmartSleepMaxRuntimeEnabled;
+    private string _smartSleepMaxRuntimeMinutes = PacingDefaults.SmartSleepMaxRuntimeMinutes.ToString(CultureInfo.InvariantCulture);
+    private string _smartSleepMaxRuntimeSleepMinutes = PacingDefaults.SmartSleepMaxRuntimeSleepMinutes.ToString(CultureInfo.InvariantCulture);
+    private int _smartSleepMaxRuntimeVariationPercent = PacingDefaults.SmartSleepMaxRuntimeVariationPercent;
     private bool _smartSleepWakeWhenConstructionQueueClears = PacingDefaults.SmartSleepWakeWhenConstructionQueueClears;
     private string _smartSleepMinimumOpportunityMinutes = PacingDefaults.SmartSleepMinimumOpportunityMinutes.ToString(CultureInfo.InvariantCulture);
     private string _smartSleepWakeBeforeMinutes = PacingDefaults.SmartSleepWakeBeforeMinutes.ToString(CultureInfo.InvariantCulture);
@@ -133,6 +138,7 @@ public sealed class PacingSettingsViewModel : BaseViewModel
     public bool ContinuousKeepAliveEnabled { get => _continuousKeepAliveEnabled; set => SetProperty(ref _continuousKeepAliveEnabled, value); }
     public string ContinuousKeepAliveMinMinutes { get => _continuousKeepAliveMinMinutes; set => SetProperty(ref _continuousKeepAliveMinMinutes, value); }
     public string ContinuousKeepAliveMaxMinutes { get => _continuousKeepAliveMaxMinutes; set => SetProperty(ref _continuousKeepAliveMaxMinutes, value); }
+    public bool ParkOnDorf2WhileIdle { get => _parkOnDorf2WhileIdle; set => SetProperty(ref _parkOnDorf2WhileIdle, value); }
     public bool SessionPacingEnabled
     {
         get => _sessionPacingEnabled;
@@ -158,6 +164,10 @@ public sealed class PacingSettingsViewModel : BaseViewModel
         }
     }
     public bool SmartSleepWakeWhenConstructionQueueClears { get => _smartSleepWakeWhenConstructionQueueClears; set => SetProperty(ref _smartSleepWakeWhenConstructionQueueClears, value); }
+    public bool SmartSleepMaxRuntimeEnabled { get => _smartSleepMaxRuntimeEnabled; set => SetProperty(ref _smartSleepMaxRuntimeEnabled, value); }
+    public string SmartSleepMaxRuntimeMinutes { get => _smartSleepMaxRuntimeMinutes; set => SetProperty(ref _smartSleepMaxRuntimeMinutes, value); }
+    public string SmartSleepMaxRuntimeSleepMinutes { get => _smartSleepMaxRuntimeSleepMinutes; set => SetProperty(ref _smartSleepMaxRuntimeSleepMinutes, value); }
+    public int SmartSleepMaxRuntimeVariationPercent { get => _smartSleepMaxRuntimeVariationPercent; set => SetProperty(ref _smartSleepMaxRuntimeVariationPercent, Math.Clamp(value, 0, 50)); }
     public string SmartSleepMinimumOpportunityMinutes { get => _smartSleepMinimumOpportunityMinutes; set => SetProperty(ref _smartSleepMinimumOpportunityMinutes, value); }
     public string SmartSleepWakeBeforeMinutes { get => _smartSleepWakeBeforeMinutes; set => SetProperty(ref _smartSleepWakeBeforeMinutes, value); }
     public string SmartSleepWakeAfterMinutes { get => _smartSleepWakeAfterMinutes; set => SetProperty(ref _smartSleepWakeAfterMinutes, value); }
@@ -242,8 +252,13 @@ public sealed class PacingSettingsViewModel : BaseViewModel
         ContinuousKeepAliveEnabled = PacingDefaults.ContinuousKeepAliveEnabled;
         ContinuousKeepAliveMinMinutes = PacingDefaults.ContinuousKeepAliveMinMinutes.ToString(CultureInfo.InvariantCulture);
         ContinuousKeepAliveMaxMinutes = PacingDefaults.ContinuousKeepAliveMaxMinutes.ToString(CultureInfo.InvariantCulture);
+        ParkOnDorf2WhileIdle = PacingDefaults.ParkOnDorf2WhileIdle;
         SessionPacingEnabled = PacingDefaults.SessionPacingEnabled;
         SmartSleepEnabled = PacingDefaults.SmartSleepEnabled;
+        SmartSleepMaxRuntimeEnabled = PacingDefaults.SmartSleepMaxRuntimeEnabled;
+        SmartSleepMaxRuntimeMinutes = PacingDefaults.SmartSleepMaxRuntimeMinutes.ToString(CultureInfo.InvariantCulture);
+        SmartSleepMaxRuntimeSleepMinutes = PacingDefaults.SmartSleepMaxRuntimeSleepMinutes.ToString(CultureInfo.InvariantCulture);
+        SmartSleepMaxRuntimeVariationPercent = PacingDefaults.SmartSleepMaxRuntimeVariationPercent;
         SmartSleepWakeWhenConstructionQueueClears = PacingDefaults.SmartSleepWakeWhenConstructionQueueClears;
         SmartSleepMinimumOpportunityMinutes = PacingDefaults.SmartSleepMinimumOpportunityMinutes.ToString(CultureInfo.InvariantCulture);
         SmartSleepWakeBeforeMinutes = PacingDefaults.SmartSleepWakeBeforeMinutes.ToString(CultureInfo.InvariantCulture);

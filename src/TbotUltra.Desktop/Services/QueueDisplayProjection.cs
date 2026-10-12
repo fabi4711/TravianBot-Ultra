@@ -30,6 +30,13 @@ public static class QueueDisplayProjection
             }
         }
 
+        historyItems.Sort(static (left, right) =>
+        {
+            var completedComparison = right.UpdatedAt.CompareTo(left.UpdatedAt);
+            return completedComparison != 0
+                ? completedComparison
+                : right.CreatedAt.CompareTo(left.CreatedAt);
+        });
         return new QueueDisplayRows(activeRows, historyItems);
     }
 
@@ -37,5 +44,6 @@ public static class QueueDisplayProjection
         item.Status is QueueStatus.Pending or QueueStatus.Running or QueueStatus.Paused;
 
     private static bool IsHistory(QueueItem item) =>
-        item.Status is QueueStatus.Succeeded or QueueStatus.Canceled or QueueStatus.Failed;
+        item.Group == QueueGroup.Construction
+        && item.Status is QueueStatus.Succeeded or QueueStatus.Canceled or QueueStatus.Failed;
 }

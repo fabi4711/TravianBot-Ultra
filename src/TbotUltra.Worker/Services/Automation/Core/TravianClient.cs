@@ -27,9 +27,11 @@ public sealed partial class TravianClient
     private readonly HeroAttributeSnapshotStore _heroAttributeSnapshotStore;
     private readonly HeroInventorySnapshotStore _heroInventorySnapshotStore;
     private readonly HeroOintmentAvailabilityStore _heroOintmentAvailabilityStore;
+    private readonly WatchtowerSnapshotStore _watchtowerSnapshotStore;
     private readonly Action<string>? _statusCallback;
     private readonly Action<VerifiedActiveVillage>? _activeVillageVerified;
     private readonly Action<ConstructionQueueObservation>? _constructionQueueObserved;
+    private readonly Action<WatchtowerStatusObservation>? _watchtowerStatusObserved;
     private readonly BrowserTraceLogger _browserTrace;
     // Flips the browser session's consentmanager route block on/off; used only by the bonus-video flow,
     // which needs GDPR/TCF consent while the rest of the session keeps it blocked (no stray sync tabs).
@@ -56,6 +58,8 @@ public sealed partial class TravianClient
     private int? _cachedSilver { get => _session.CachedSilver; set => _session.CachedSilver = value; }
     private DateTimeOffset _cachedCurrencyAt { get => _session.CachedCurrencyAt; set => _session.CachedCurrencyAt = value; }
     private string? _accountTribe { get => _session.AccountTribe; set => _session.AccountTribe = value; }
+    private CityStatus _lastBuildingOverviewCityStatus = CityStatus.Unknown;
+    private CityCapability KnownCityCapability => _session.CityCapability;
 
     // Short-lived cache for ReadActiveConstructionsAsync. One upgrade-to-max iteration makes
     // several pre-click reads of the SAME dorf2 page state (e.g. ReadHighestKnownQueuedBuildingLevel
@@ -302,9 +306,11 @@ public sealed partial class TravianClient
         _heroAttributeSnapshotStore = new HeroAttributeSnapshotStore(_projectRoot);
         _heroInventorySnapshotStore = new HeroInventorySnapshotStore(_projectRoot);
         _heroOintmentAvailabilityStore = new HeroOintmentAvailabilityStore(_projectRoot);
+        _watchtowerSnapshotStore = new WatchtowerSnapshotStore(_projectRoot, callbacks.StatusCallback);
         _statusCallback = callbacks.StatusCallback;
         _activeVillageVerified = callbacks.ActiveVillageVerified;
         _constructionQueueObserved = callbacks.ConstructionQueueObserved;
+        _watchtowerStatusObserved = callbacks.WatchtowerStatusObserved;
         _browserTrace = browserTrace ?? new BrowserTraceLogger(config.DetailedBrowserLoggingEnabled, callbacks.StatusCallback);
         _browserTrace.AttachPage(page, "travian-client");
     }
@@ -613,6 +619,9 @@ public sealed partial class TravianClient
 
         [JsonPropertyName("isCapital")]
         public bool IsCapital { get; init; }
+
+        [JsonPropertyName("isCity")]
+        public bool IsCity { get; init; }
 
         [JsonPropertyName("x")]
         public int? X { get; init; }
