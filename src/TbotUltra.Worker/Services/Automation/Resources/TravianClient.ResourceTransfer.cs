@@ -435,6 +435,8 @@ public sealed partial class TravianClient
 
               let nextReturnSeconds = null;
               for (const node of document.querySelectorAll('.timer, .countdown, [counting="down"], [id^="timer"]')) {
+                // The server clock is a counting-up .timer (e.g. "18:00:12"), not a merchant return countdown.
+                if ((node.getAttribute('counting') || '').toLowerCase() === 'up') continue;
                 nextReturnSeconds = parseDuration(node.textContent || '');
                 if (nextReturnSeconds !== null) break;
               }
