@@ -20,9 +20,10 @@ public sealed class DashboardBuildingActivitySourceTests
 
         Assert.True(dashboardGuardStart >= 0 && dashboardGuardEnd > dashboardGuardStart);
         var dashboardGuard = tick[dashboardGuardStart..dashboardGuardEnd];
-        Assert.Contains("RefreshVillageActivityIndicatorsOnDashboard();", dashboardGuard, StringComparison.Ordinal);
+        const string dashboardRefresh = "RefreshVillageActivityIndicatorsOnDashboard(refreshQueueRows: _queuePopupWindow?.IsVisible == true)";
+        Assert.Contains(dashboardRefresh, dashboardGuard, StringComparison.Ordinal);
         Assert.True(
             tick.IndexOf("TickBuildQueueCountdown();", StringComparison.Ordinal)
-            < tick.IndexOf("RefreshVillageActivityIndicatorsOnDashboard();", StringComparison.Ordinal));
+            < tick.IndexOf(dashboardRefresh, StringComparison.Ordinal));
     }
 }

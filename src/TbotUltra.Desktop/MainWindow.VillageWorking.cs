@@ -388,7 +388,9 @@ public partial class MainWindow
                 ActiveUpgrades: activeUpgrades);
             var preserved = SmithyQueueState.PreserveKnownActiveQueue(incoming, existing, DateTimeOffset.UtcNow);
             StoreVillageStatusCacheEntry(name, cached with { SmithyUpgradeStatus = preserved });
-            _villageCacheStore.Save(_villageStatusCache.Snapshot);
+            _villageCacheWriter.Request(new VillageCacheWrite(
+                _accountStore.ActiveAccountName(),
+                _villageStatusCache.Snapshot));
 
             var selectedKey = GetSelectedVillageKey();
             if (selectedKey is null
@@ -426,15 +428,21 @@ public partial class MainWindow
             : $"{span.Minutes}:{span.Seconds:00}";
     }
 
-    private void RefreshVillageActivityIndicatorsOnDashboard()
+    private void RefreshVillageActivityIndicatorsOnDashboard() =>
+        RefreshVillageActivityIndicatorsOnDashboard(refreshQueueRows: true);
+
+    private void RefreshVillageActivityIndicatorsOnDashboard(bool refreshQueueRows)
     {
         if (DashboardVillageList.ItemsSource is IEnumerable<VillageSelectionItem> items)
         {
             ApplyVillageActivityIndicators(items.ToList());
         }
 
-        RefreshTravianBuildQueueUi();
-        RefreshTravianSmithyQueueUi();
+        if (refreshQueueRows)
+        {
+            RefreshTravianBuildQueueUi();
+            RefreshTravianSmithyQueueUi();
+        }
     }
 
     private bool _dashboardVillageProjectionPending;
@@ -979,7 +987,9 @@ public partial class MainWindow
         }
 
         StoreVillageStatusCacheEntry(name, updated);
-        _villageCacheStore.Save(_villageStatusCache.Snapshot);
+        _villageCacheWriter.Request(new VillageCacheWrite(
+            _accountStore.ActiveAccountName(),
+            _villageStatusCache.Snapshot));
     }
 
     // Timer/status updates produced by a live village read must keep that read's coordinate owner.
@@ -1015,7 +1025,9 @@ public partial class MainWindow
         }
 
         StoreVillageStatusCacheEntry(name, updated);
-        _villageCacheStore.Save(_villageStatusCache.Snapshot);
+        _villageCacheWriter.Request(new VillageCacheWrite(
+            _accountStore.ActiveAccountName(),
+            _villageStatusCache.Snapshot));
     }
 
     private void StoreVillageStatusCacheEntry(string name, VillageStatus status)

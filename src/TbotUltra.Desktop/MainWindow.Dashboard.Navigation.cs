@@ -51,6 +51,10 @@ public partial class MainWindow
                     _resourcesViewModel.TickLiveForecasts();
                     TickResourceTransferVillageForecasts();
                 }
+                else if (ReferenceEquals(targetTab, BuildingsTabItem))
+                {
+                    RefreshDemolishStatusForSelectedVillage();
+                }
                 else if (ReferenceEquals(targetTab, TroopsTabItem))
                 {
                     UpdateReinforcementStatus();

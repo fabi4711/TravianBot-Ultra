@@ -526,9 +526,16 @@ public partial class MainWindow : Window
         }
 
         _clockTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        DateTimeOffset? lastUiPulseAtUtc = null;
         _clockTimer.Tick += (_, _) =>
         {
             var uiPulseStopwatch = Stopwatch.StartNew();
+            var pulseAtUtc = DateTimeOffset.UtcNow;
+            if (lastUiPulseAtUtc is { } previousPulseAtUtc)
+            {
+                ReportSlowUiWork("1 Hz UI scheduling delay", pulseAtUtc - previousPulseAtUtc - _clockTimer.Interval);
+            }
+            lastUiPulseAtUtc = pulseAtUtc;
             _isUiPresentationPulse = true;
             try
             {
@@ -541,18 +548,26 @@ public partial class MainWindow : Window
                 TickPreSleepConstructionFill();
                 HandleBrowserClosedSignal();
                 TickAutomationLoopCountdowns();
-                TickIncomingAttacks(serverNow);
-                TickTroopEvasion(serverNow);
+                MeasureUiWork("attack presentation pulse", () =>
+                {
+                    TickIncomingAttacks(serverNow);
+                    TickTroopEvasion(serverNow);
+                });
 
                 TickBuildQueueCountdown();
-                RefreshDemolishStatusForSelectedVillage();
+                if (IsMainTabSelected(BuildingsTabItem))
+                {
+                    MeasureUiWork("demolition presentation pulse", () =>
+                        RefreshDemolishStatusForSelectedVillage(useUiSnapshot: true));
+                }
 
                 if (dashboardTabSelected)
                 {
                     // Active construction timers belong to the cached Travian snapshot. Reproject them on
                     // the presentation pulse so expired icons disappear immediately while the live refresh
                     // requested by TickBuildQueueCountdown confirms the queue in the browser.
-                    RefreshVillageActivityIndicatorsOnDashboard();
+                    MeasureUiWork("dashboard presentation pulse", () =>
+                        RefreshVillageActivityIndicatorsOnDashboard(refreshQueueRows: _queuePopupWindow?.IsVisible == true));
                 }
 
                 // Only render the cached projection here. Queue/status changes rebuild it through
@@ -564,9 +579,12 @@ public partial class MainWindow : Window
 
                 if (IsMainTabSelected(QueueTabItem))
                 {
-                    UpdateBuildQueueStatusText();
-                    RefreshTravianBuildQueueUi();
-                    RefreshTravianSmithyQueueUi();
+                    MeasureUiWork("queue presentation pulse", () =>
+                    {
+                        UpdateBuildQueueStatusText();
+                        RefreshTravianBuildQueueUi();
+                        RefreshTravianSmithyQueueUi();
+                    });
                 }
 
                 if (IsMainTabSelected(ResourcesTabItem))

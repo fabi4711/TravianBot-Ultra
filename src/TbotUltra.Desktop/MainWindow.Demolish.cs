@@ -26,10 +26,11 @@ public partial class MainWindow
             && string.Equals(GetQueueItemVillageKey(item), selectedVillageKey, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void RefreshDemolishStatusForSelectedVillage()
+    private void RefreshDemolishStatusForSelectedVillage(bool useUiSnapshot = false)
     {
         var now = DateTimeOffset.UtcNow;
-        var items = _botService.GetQueueItemsForDisplay()
+        var queueItems = useUiSnapshot ? GetQueueSnapshotForUi() : _botService.GetQueueItemsForDisplay();
+        var items = queueItems
             .Where(IsDemolishQueueItem)
             .Where(IsDemolishQueueItemForSelectedVillage)
             .Where(candidate => candidate.Status is QueueStatus.Pending or QueueStatus.Running)
