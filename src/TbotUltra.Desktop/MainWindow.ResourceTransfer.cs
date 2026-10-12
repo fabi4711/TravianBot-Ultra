@@ -24,10 +24,11 @@ public partial class MainWindow
             return;
         }
 
+        var options = LoadBotOptions();
+        List<string> missingConfiguredVillages;
         _suppressResourceTransferConfigWrite = true;
         try
         {
-            var options = LoadBotOptions();
             var targetName = options.ResourceTransferTargetVillageName;
             var selectedSources = options.ResourceTransferSourceVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var previousItems = _resourceTransferVillages
@@ -57,6 +58,15 @@ public partial class MainWindow
                 _resourceTransferVillages.Add(item);
             }
 
+            // A village refresh can briefly list only some villages (e.g. right after a re-login). Writing the UI
+            // state back then replaced the configured targets/sources with the capital fallback and disabled the
+            // transfer loop group, so an incomplete list must leave the saved settings and the toggle alone.
+            missingConfiguredVillages = new[] { options.ResourceTransferTargetVillageName, options.ResourceTransferSecondTargetVillageName }
+                .Concat(options.ResourceTransferSourceVillageNames)
+                .Where(name => !string.IsNullOrWhiteSpace(name) && FindResourceTransferVillage(name) is null)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             var selectedTarget = ResolveResourceTransferTargetSelection(targetName);
             if (selectedTarget is not null)
             {
@@ -65,11 +75,20 @@ public partial class MainWindow
 
             ResourceTransferSecondTargetVillageComboBox.SelectedItem = FindResourceTransferVillage(options.ResourceTransferSecondTargetVillageName);
 
-            UpdateResourceTransferTargetSourceState(persist: false);
+            UpdateResourceTransferTargetSourceState(persist: false, allowDisableLoopGroup: missingConfiguredVillages.Count == 0);
         }
         finally
         {
             _suppressResourceTransferConfigWrite = false;
+        }
+
+        if (missingConfiguredVillages.Count > 0)
+        {
+            AppendLog(
+                $"[transfer] village list ({_resourceTransferVillages.Count}) misses configured "
+                + $"'{string.Join("', '", missingConfiguredVillages)}'; kept the saved transfer settings.");
+            UpdateResourceTransferStatus(allowDisableLoopGroup: false);
+            return;
         }
 
         PersistResourceTransferSettings();
@@ -276,7 +295,7 @@ public partial class MainWindow
         }
     }
 
-    private void UpdateResourceTransferTargetSourceState(bool persist)
+    private void UpdateResourceTransferTargetSourceState(bool persist, bool allowDisableLoopGroup = true)
     {
         var target = ResourceTransferTargetVillageComboBox.SelectedItem as ResourceTransferVillageItem;
         var targetName = target?.Name ?? string.Empty;
@@ -303,10 +322,10 @@ public partial class MainWindow
             PersistResourceTransferSettings();
         }
 
-        UpdateResourceTransferStatus();
+        UpdateResourceTransferStatus(allowDisableLoopGroup);
     }
 
-    private void UpdateResourceTransferStatus()
+    private void UpdateResourceTransferStatus(bool allowDisableLoopGroup = true)
     {
         var canRun = CanRunResourceTransfer(out var reason);
         ResourceTransferStatusTextBlock.Text = canRun ? "Ready." : reason;
@@ -314,7 +333,7 @@ public partial class MainWindow
         ResourceTransferQueueNowButton.IsEnabled = canRun && !_uiBusy && !_resourceTransferScanRunning;
         ResourceTransferScanVillagesButton.IsEnabled = !IsSessionSleeping && !_uiBusy && !_resourceTransferScanRunning && _resourceTransferVillages.Count > 0;
 
-        if (!canRun && _resourceTransferVillages.Count > 0)
+        if (!canRun && allowDisableLoopGroup && _resourceTransferVillages.Count > 0)
         {
             DisableResourceTransferLoopGroup(reason);
         }
