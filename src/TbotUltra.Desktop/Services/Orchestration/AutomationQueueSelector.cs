@@ -256,8 +256,11 @@ internal static class AutomationQueueSelector
             return selectReadyConstruction(villageItems, now, preview);
         }
 
-        return group == QueueGroup.Hero
-            ? ContinuousLoopSelector.SelectReadyHeroGroupItem(villageItems, now)
-            : ContinuousLoopSelector.SelectReadyGroupHead(villageItems, now);
+        return group switch
+        {
+            QueueGroup.Hero => ContinuousLoopSelector.SelectReadyHeroGroupItem(villageItems, now),
+            QueueGroup.Farming => ContinuousLoopSelector.SelectReadyFarmingGroupItem(villageItems, now),
+            _ => ContinuousLoopSelector.SelectReadyGroupHead(villageItems, now),
+        };
     }
 }
