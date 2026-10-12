@@ -17,7 +17,7 @@ public sealed class HumanSlotNavigationSourceTests
     }
 
     [Fact]
-    public void SlotEntry_UsesSvgClickAndAlarmsBeforeVerifiedUrlFallback()
+    public void SlotEntry_UsesSvgClickAndReportsOnlyVerifiedUrlFallback()
     {
         var navigation = ReadSource("Core", "TravianClient.Navigation.cs");
         var upgrade = ReadSource("Buildings", "TravianClient.Buildings.UpgradeFlow.cs");
@@ -38,7 +38,7 @@ public sealed class HumanSlotNavigationSourceTests
         Assert.True(navigation.IndexOf("_page.Locator(visibleSlot).CountAsync()", StringComparison.Ordinal)
             < navigation.IndexOf("await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken)", StringComparison.Ordinal));
         Assert.True(navigation.IndexOf("Notify($\"ALARM: [slot-nav]", StringComparison.Ordinal)
-            < navigation.IndexOf("await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken)", StringComparison.Ordinal));
+            > navigation.IndexOf("await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken)", StringComparison.Ordinal));
         Assert.DoesNotContain("await GotoAsync(Paths.BuildBySlot(", upgrade, StringComparison.Ordinal);
         Assert.DoesNotContain("await GotoAsync(Paths.BuildBySlot(", construct, StringComparison.Ordinal);
     }
@@ -98,8 +98,8 @@ public sealed class HumanSlotNavigationSourceTests
         Assert.Contains("catch (TimeoutException)", slotEntry, StringComparison.Ordinal);
         Assert.Contains("CurrentPageHasUsableTravianShellAsync(cancellationToken)", slotEntry, StringComparison.Ordinal);
         Assert.Contains("FindExactSlotClickPointAsync", click, StringComparison.Ordinal);
-        Assert.Contains("new Position { X = (float)clickPoint[0], Y = (float)clickPoint[1] }", click, StringComparison.Ordinal);
-        Assert.Contains("ClickLocatorAsync(candidate", click, StringComparison.Ordinal);
+        Assert.Contains("await _page.Mouse.ClickAsync((float)clickPoint[0], (float)clickPoint[1])", click, StringComparison.Ordinal);
+        Assert.Contains("WaitForExactSlotAfterClickTimeoutAsync(slotId, cancellationToken)", click, StringComparison.Ordinal);
     }
 
     [Theory]

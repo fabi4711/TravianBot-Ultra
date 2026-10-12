@@ -1,9 +1,34 @@
 using Xunit;
+using TbotUltra.Desktop.ViewModels;
 
 namespace TbotUltra.Desktop.Tests;
 
 public sealed class AlarmClassificationTests
 {
+    [Theory]
+    [InlineData("[slot-nav] slot 13 candidate 1/2 was not actionable: Timeout 3000ms exceeded.")]
+    [InlineData("[slot-nav] slot 40 candidate 2/2 was not actionable: Timeout 3000ms exceeded.")]
+    public void FailedOverviewClickCandidate_IsDiagnosticNotAlarm(string message)
+    {
+        Assert.False(MainWindow.IsAlarmMessage(message));
+    }
+
+    [Fact]
+    public void VerifiedSlotUrlFallback_IsListedButAutoAcknowledged()
+    {
+        const string message = "ALARM: [slot-nav] Overview click unavailable for visible slot 40 on Dorf2; verified URL fallback succeeded.";
+
+        Assert.True(MainWindow.IsAlarmMessage(message));
+        Assert.True(MainWindow.IsAutoAcknowledgedAlarmMessage(message));
+        Assert.False(MainWindow.IsAutoAcknowledgedAlarmMessage(
+            "ALARM: [slot-nav] URL fallback failed for visible slot 40 on Dorf2."));
+
+        var alarms = new AlarmsViewModel();
+        alarms.RecordAlarm(message, "account|slot-40", MainWindow.IsAutoAcknowledgedAlarmMessage(message), DateTimeOffset.UtcNow);
+        Assert.True(Assert.Single(alarms.Entries).IsAcknowledged);
+        Assert.Equal(0, alarms.UnacknowledgedCount);
+    }
+
     [Fact]
     public void OneWorkerFailureHasSameAlarmSignatureInQueueAndLoopDiagnostics()
     {

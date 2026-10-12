@@ -542,15 +542,20 @@ public sealed partial class TravianClient
                 await CaptureFailureArtifactsAsync($"slot-{slotId}-click-fallback", cancellationToken);
             }
 
-            Notify($"ALARM: [slot-nav] No clickable target for visible slot {slotId} on {(isResourceField ? "Dorf1" : "Dorf2")}; using direct build-page URL fallback. Review this slot's live click markup.");
             await GotoAsync(Paths.BuildBySlot(slotId), cancellationToken);
             if (!TravianUrls.IsBuildPageForSlot(_page.Url, slotId))
             {
                 throw new InvalidOperationException(
                     $"Cannot open slot {slotId}: URL fallback did not reach its exact build page. Current page: '{_page.Url}'.");
             }
+            if (!await CurrentPageHasUsableTravianShellAsync(cancellationToken))
+            {
+                throw new TransientNavigationException(
+                    $"Slot {slotId} URL fallback reached its exact build page without a usable Travian shell.");
+            }
 
             Notify($"[slot-nav] opened slot {slotId} via verified URL fallback from {(isResourceField ? "Dorf1" : "Dorf2")}.");
+            Notify($"ALARM: [slot-nav] Overview click unavailable for visible slot {slotId} on {(isResourceField ? "Dorf1" : "Dorf2")}; verified URL fallback succeeded.");
             return;
         }
 
@@ -634,13 +639,30 @@ public sealed partial class TravianClient
 
                 if (slotId == 40)
                 {
-                    // The wall is a concave SVG. Its bounding-box center can hit the village
-                    // overlay, so click the verified visible path point rather than its center.
+                    // Playwright recalculates an SVG path's locator-relative click position; on the
+                    // concave wall this can land on #villageContent even after DOM hit-testing passed.
+                    // Click the tested viewport point directly and never repeat an uncertain click.
+                    var pointStillOwned = await candidate.EvaluateAsync<bool>(
+                        "(node, point) => { const hit = document.elementFromPoint(point[0], point[1]); return hit === node || node.contains(hit); }",
+                        clickPoint);
+                    if (!pointStillOwned)
+                    {
+                        Notify($"[slot-nav] wall point for slot {slotId} candidate {i + 1}/{count} changed before click; skipped.");
+                        continue;
+                    }
+
+                    await EnsureAccountAccessAllowedAsync(cancellationToken);
                     Notify($"[slot-nav] clicking verified wall point for slot {slotId} candidate {i + 1}/{count}.");
-                    await ClickLocatorAsync(candidate,
-                        $"open wall slot {slotId} from overview (candidate {i + 1}/{count})",
-                        cancellationToken, Math.Min(_config.TimeoutMs, 3000),
-                        new Position { X = (float)clickPoint[0], Y = (float)clickPoint[1] });
+                    using (var trace = _browserTrace.BeginOperation("CLICK", $"open wall slot {slotId} from overview", "verified viewport point"))
+                    {
+                        await _page.Mouse.ClickAsync((float)clickPoint[0], (float)clickPoint[1]).WaitAsync(cancellationToken);
+                        trace.Complete("success");
+                    }
+                    if (!await WaitForExactSlotAfterClickTimeoutAsync(slotId, cancellationToken))
+                    {
+                        throw new TransientNavigationException(
+                            $"Wall slot {slotId} point click did not reach its exact build page; no second click was attempted.");
+                    }
                     return true;
                 }
 
@@ -724,17 +746,27 @@ public sealed partial class TravianClient
               };
               const cx = rect.left + rect.width / 2;
               const cy = rect.top + rect.height / 2;
-              if (owns(cx, cy)) return [rect.width / 2, rect.height / 2];
+              if (owns(cx, cy)) return [cx, cy];
               if (slotId !== 40) return null;
-              // Sample the visible wall silhouette; its SVG bounding box includes empty space.
+              // Sample the visible wall silhouette and prefer a point with surrounding hit area.
+              // The first owned pixel may sit on an edge and become unstable before dispatch.
+              let best = null;
+              let bestScore = -1;
               for (let y = 0; y < 41; y++) {
                 for (let x = 0; x < 41; x++) {
                   const px = rect.left + rect.width * (x + .5) / 41;
                   const py = rect.top + rect.height * (y + .5) / 41;
-                  if (owns(px, py)) return [px - rect.left, py - rect.top];
+                  if (!owns(px, py)) continue;
+                  const margin = Math.max(2, Math.min(rect.width, rect.height) / 100);
+                  const score = [[-margin, 0], [margin, 0], [0, -margin], [0, margin]]
+                    .filter(([dx, dy]) => owns(px + dx, py + dy)).length;
+                  if (score > bestScore) {
+                    best = [px, py];
+                    bestScore = score;
+                  }
                 }
               }
-              return null;
+              return best;
             }
             """, slotId);
 

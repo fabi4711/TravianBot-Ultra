@@ -677,6 +677,15 @@ public partial class MainWindow
             return false;
         }
 
+        // A failed overview-click candidate is diagnostic. A verified fallback gets one
+        // auto-acknowledged incident below; an unsuccessful fallback raises the task failure.
+        if (value.Contains("[slot-nav] slot ")
+            && value.Contains(" candidate ")
+            && value.Contains(" was not actionable:"))
+        {
+            return false;
+        }
+
         if (value.Contains("[nav]") && value.Contains("timeout recovered"))
         {
             return false;
@@ -754,7 +763,7 @@ public partial class MainWindow
             : match.Groups["failure"].Value;
     }
 
-    private static bool IsAutoAcknowledgedAlarmMessage(string message)
+    internal static bool IsAutoAcknowledgedAlarmMessage(string message)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
@@ -762,7 +771,9 @@ public partial class MainWindow
         }
 
         var value = message.ToLowerInvariant();
-        return value.Contains("chromium warmup")
+        return (value.Contains("alarm: [slot-nav]")
+                && value.Contains("verified url fallback succeeded"))
+            || value.Contains("chromium warmup")
             || value.Contains("captcha warmup")
             || (value.Contains("not logged in")
                 && value.Contains("current page state is 'unknown'"))
