@@ -12,10 +12,11 @@ public sealed partial class TravianClient
 
     public async Task<string> SendResourcesBetweenOwnVillagesAsync(CancellationToken cancellationToken = default)
     {
-        Notify($"[transfer] starting — target='{_config.ResourceTransferTargetVillageName ?? "(unset)"}', sources={(_config.ResourceTransferSourceVillageNames?.Count ?? 0)}");
+        var targetNames = ResolveResourceTransferTargetNames(_config);
+        Notify($"[transfer] starting — targets='{(targetNames.Count > 0 ? string.Join(", ", targetNames) : "(unset)")}', sources={(_config.ResourceTransferSourceVillageNames?.Count ?? 0)}");
         await EnsureLoggedInAsync(cancellationToken: cancellationToken);
 
-        if (string.IsNullOrWhiteSpace(_config.ResourceTransferTargetVillageName))
+        if (targetNames.Count == 0)
         {
             return "Resource transfer requires a target village.";
         }
@@ -37,13 +38,62 @@ public sealed partial class TravianClient
         }
 
         var villages = await ReadVillagesAsync(cancellationToken);
-        var targetVillage = villages.FirstOrDefault(v =>
-            string.Equals(v.Name, _config.ResourceTransferTargetVillageName, StringComparison.OrdinalIgnoreCase));
-        if (targetVillage is null)
+        var sentCount = 0;
+        var skippedCount = 0;
+        int? shortestMerchantWaitSeconds = null;
+        var missingTargets = new List<string>();
+        foreach (var targetName in targetNames)
         {
-            throw new InvalidOperationException($"Resource transfer target village '{_config.ResourceTransferTargetVillageName}' was not found.");
+            cancellationToken.ThrowIfCancellationRequested();
+            var targetVillage = villages.FirstOrDefault(v =>
+                string.Equals(v.Name, targetName, StringComparison.OrdinalIgnoreCase));
+            if (targetVillage is null)
+            {
+                missingTargets.Add(targetName);
+                Notify($"Resource transfer: target village '{targetName}' was not found; skipping it.");
+                continue;
+            }
+
+            // Targets are served in order, so the primary target gets first pick of the merchants.
+            var result = await SendResourcesToTargetVillageAsync(targetVillage, targetNames, sourceNames, enabledResources, villages, cancellationToken);
+            sentCount += result.SentCount;
+            skippedCount += result.SkippedCount;
+            shortestMerchantWaitSeconds = MinPositive(shortestMerchantWaitSeconds, result.ShortestMerchantWaitSeconds);
         }
 
+        if (missingTargets.Count == targetNames.Count)
+        {
+            throw new InvalidOperationException($"Resource transfer target village '{string.Join("', '", missingTargets)}' was not found.");
+        }
+
+        if (sentCount > 0)
+        {
+            return $"Resource transfer completed. Sent {sentCount} shipment(s) to {targetNames.Count} target(s), skipped {skippedCount}.";
+        }
+
+        var retrySeconds = shortestMerchantWaitSeconds is > 0
+            ? shortestMerchantWaitSeconds.Value
+            : ResourceTransferFallbackCooldownSeconds;
+        throw new InvalidOperationException($"Resource transfer had no shipment to send. queue_wait_seconds={Math.Max(1, retrySeconds)}");
+    }
+
+    internal static IReadOnlyList<string> ResolveResourceTransferTargetNames(TbotUltra.Core.Configuration.BotOptions options)
+    {
+        return new[] { options.ResourceTransferTargetVillageName, options.ResourceTransferSecondTargetVillageName }
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name!.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private async Task<ResourceTransferTargetResult> SendResourcesToTargetVillageAsync(
+        Village targetVillage,
+        IReadOnlyList<string> targetNames,
+        IReadOnlyList<string> sourceNames,
+        IReadOnlyCollection<string> enabledResources,
+        IReadOnlyList<Village> villages,
+        CancellationToken cancellationToken)
+    {
         Notify($"Resource transfer: scanning target '{targetVillage.Name}'.");
         var targetStatus = await ReadResourceTransferVillageStatusAsync(targetVillage, cancellationToken);
         var targetStock = TryBuildResourceTransferStock(targetStatus);
@@ -58,10 +108,10 @@ public sealed partial class TravianClient
         foreach (var sourceName in sourceNames)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.Equals(sourceName, targetVillage.Name, StringComparison.OrdinalIgnoreCase))
+            if (targetNames.Contains(sourceName, StringComparer.OrdinalIgnoreCase))
             {
                 skippedCount++;
-                Notify($"Resource transfer: skip '{sourceName}' because it is the target village.");
+                Notify($"Resource transfer: skip '{sourceName}' because it is a target village.");
                 continue;
             }
 
@@ -136,15 +186,7 @@ public sealed partial class TravianClient
             await ApplyActionDelayAsync(cancellationToken);
         }
 
-        if (sentCount > 0)
-        {
-            return $"Resource transfer completed. Sent from {sentCount} source village(s), skipped {skippedCount}.";
-        }
-
-        var retrySeconds = shortestMerchantWaitSeconds is > 0
-            ? shortestMerchantWaitSeconds.Value
-            : ResourceTransferFallbackCooldownSeconds;
-        throw new InvalidOperationException($"Resource transfer had no shipment to send. queue_wait_seconds={Math.Max(1, retrySeconds)}");
+        return new ResourceTransferTargetResult(sentCount, skippedCount, shortestMerchantWaitSeconds);
     }
 
     internal static ResourceTransferShipment CalculateResourceTransferShipment(
@@ -567,6 +609,8 @@ public sealed partial class TravianClient
             return this with { Resources = updated };
         }
     }
+
+    private sealed record ResourceTransferTargetResult(int SentCount, int SkippedCount, int? ShortestMerchantWaitSeconds);
 
     private sealed record ResourceTransferMerchantState(int Available, int CapacityPerMerchant, long TotalCapacity, int? NextReturnSeconds);
 

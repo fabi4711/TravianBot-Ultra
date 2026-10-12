@@ -301,6 +301,29 @@
                           Height="28"
                           Margin="0,0,0,10"
                           SelectionChanged="ResourceTransferSetting_SelectionChanged" />
+                <TextBlock Text="Second target village (optional)"
+                           Foreground="{DynamicResource TextSubtleBrush}"
+                           FontSize="12"
+                           Margin="0,0,0,4"
+                           ToolTip="Served after the target village with the merchants that are still free." />
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="ResourceTransferSecondTargetVillageComboBox"
+                              Grid.Column="0"
+                              DisplayMemberPath="DisplayName"
+                              Height="28"
+                              SelectionChanged="ResourceTransferSetting_SelectionChanged" />
+                    <Button x:Name="ResourceTransferSecondTargetClearButton"
+                            Grid.Column="1"
+                            Content="Clear"
+                            Height="28"
+                            Margin="6,0,0,0"
+                            Padding="10,0"
+                            Click="ResourceTransferSecondTargetClearButton_Click" />
+                </Grid>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                     <TextBlock Text="Source villages"
                                Foreground="{DynamicResource TextSubtleBrush}"

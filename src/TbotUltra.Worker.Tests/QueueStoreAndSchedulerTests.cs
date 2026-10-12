@@ -627,9 +627,30 @@ public sealed class QueueStoreAndSchedulerTests : IDisposable
         Assert.Equal(["A", "B"], parsed.SourceVillageNames);
         Assert.Equal(100, parsed.SourceThresholdPercent);
         var serialized = parsed.ToDictionary();
-        Assert.Equal(10, serialized.Count);
+        Assert.Equal(11, serialized.Count);
+        Assert.Equal(string.Empty, serialized[BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName]);
         Assert.Equal("[\"A\",\"B\"]", serialized[BotOptionPayloadKeys.ResourceTransferSourceVillageNames]);
         Assert.Equal("false", serialized[BotOptionPayloadKeys.ResourceTransferSendClay]);
+    }
+
+    [Fact]
+    public void ResourceTransferPayload_RoundTripsSecondTargetVillage()
+    {
+        var payload = new ResourceTransferPayload(
+            Enabled: true,
+            TargetVillageName: "Kornkammer",
+            SourceVillageNames: ["Hauptdorf"],
+            SourceThresholdPercent: 10,
+            SourceKeepPercent: 5,
+            TargetFillPercent: 90,
+            SendWood: true,
+            SendClay: true,
+            SendIron: true,
+            SendCrop: false,
+            SecondTargetVillageName: " Rohstoffhof ").ToDictionary();
+
+        Assert.True(ResourceTransferPayload.TryFromDictionary(payload, out var parsed));
+        Assert.Equal("Rohstoffhof", parsed!.SecondTargetVillageName);
     }
 
     [Fact]

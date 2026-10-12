@@ -12,7 +12,8 @@ public sealed record ResourceTransferPayload(
     bool SendWood,
     bool SendClay,
     bool SendIron,
-    bool SendCrop)
+    bool SendCrop,
+    string SecondTargetVillageName = "")
 {
     public static bool TryFromDictionary(IReadOnlyDictionary<string, string> payload, out ResourceTransferPayload? result)
     {
@@ -31,7 +32,8 @@ public sealed record ResourceTransferPayload(
 
         var target = ReadTrimmed(payload, BotOptionPayloadKeys.ResourceTransferTargetVillageName) ?? string.Empty;
         var sources = VillageNameListPayloadCodec.Parse(ReadTrimmed(payload, BotOptionPayloadKeys.ResourceTransferSourceVillageNames));
-        result = new ResourceTransferPayload(enabled, target, sources, threshold, keep, fill, sendWood, sendClay, sendIron, sendCrop);
+        var secondTarget = ReadTrimmed(payload, BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName) ?? string.Empty;
+        result = new ResourceTransferPayload(enabled, target, sources, threshold, keep, fill, sendWood, sendClay, sendIron, sendCrop, secondTarget);
         return true;
     }
 
@@ -41,6 +43,7 @@ public sealed record ResourceTransferPayload(
         {
             [BotOptionPayloadKeys.ResourceTransferEnabled] = Enabled ? "true" : "false",
             [BotOptionPayloadKeys.ResourceTransferTargetVillageName] = TargetVillageName.Trim(),
+            [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = SecondTargetVillageName.Trim(),
             [BotOptionPayloadKeys.ResourceTransferSourceVillageNames] = VillageNameListPayloadCodec.Serialize(SourceVillageNames),
             [BotOptionPayloadKeys.ResourceTransferSourceThresholdPercent] = SourceThresholdPercent.ToString(),
             [BotOptionPayloadKeys.ResourceTransferSourceKeepPercent] = SourceKeepPercent.ToString(),

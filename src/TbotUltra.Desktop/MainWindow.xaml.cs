@@ -652,6 +652,7 @@ public partial class MainWindow : Window
         _automationLoopTasksView.Filter = AutomationLoopTaskFilter;
         AutomationLoopListBox.ItemsSource = _automationLoopTasksView;
         ResourceTransferTargetVillageComboBox.ItemsSource = _resourceTransferVillages;
+        ResourceTransferSecondTargetVillageComboBox.ItemsSource = _resourceTransferVillages;
         ResourceTransferSourceVillagesItemsControl.ItemsSource = _resourceTransferVillages;
         ReinforcementTargetVillageComboBox.ItemsSource = _reinforcementVillages;
         ReinforcementSourceVillagesItemsControl.ItemsSource = _reinforcementSourceVillages;
