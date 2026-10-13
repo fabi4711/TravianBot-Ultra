@@ -79,7 +79,8 @@ public sealed partial class TravianClient
 
     internal static IReadOnlyList<string> ResolveResourceTransferTargetNames(TbotUltra.Core.Configuration.BotOptions options)
     {
-        return new[] { options.ResourceTransferTargetVillageName, options.ResourceTransferSecondTargetVillageName }
+        return new[] { options.ResourceTransferTargetVillageName }
+            .Concat(options.ResourceTransferAdditionalTargetVillageNames ?? [])
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Select(name => name!.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)

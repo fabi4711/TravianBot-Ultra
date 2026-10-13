@@ -474,7 +474,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             SendClay: options.ResourceTransferSendClay,
             SendIron: options.ResourceTransferSendIron,
             SendCrop: options.ResourceTransferSendCrop,
-            SecondTargetVillageName: options.ResourceTransferSecondTargetVillageName).ToDictionary();
+            AdditionalTargetVillageNames: options.ResourceTransferAdditionalTargetVillageNames).ToDictionary();
         runtimeItems.Ensure(new AutomationRuntimeItemSpec(
             "send_resources_between_villages", "Resource transfer", payload, -50, 0));
     }

@@ -279,6 +279,7 @@ public static class BotOptionPayloadKeys
     public const string ResourceTransferEnabled = "resource_transfer_enabled";
     public const string ResourceTransferTargetVillageName = "resource_transfer_target_village_name";
     public const string ResourceTransferSecondTargetVillageName = "resource_transfer_second_target_village_name";
+    public const string ResourceTransferAdditionalTargetVillageNames = "resource_transfer_additional_target_village_names";
     public const string ResourceTransferSourceVillageNames = "resource_transfer_source_village_names";
     public const string ResourceTransferSourceThresholdPercent = "resource_transfer_source_threshold_percent";
     public const string ResourceTransferSourceKeepPercent = "resource_transfer_source_keep_percent";

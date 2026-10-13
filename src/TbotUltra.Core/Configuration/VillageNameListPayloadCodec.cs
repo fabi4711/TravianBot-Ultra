@@ -34,7 +34,7 @@ internal static class VillageNameListPayloadCodec
         return Normalize(trimmed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
-    private static List<string> Normalize(IEnumerable<string?> names)
+    internal static List<string> Normalize(IEnumerable<string?> names)
         => names
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Select(name => name!.Trim())

@@ -11,7 +11,7 @@ public partial class MainWindow
     private TextBlock NpcTradeTroopsTextBlock => NpcTradePanelControl.TroopsCount;
     private TextBlock NpcTradeBuildingsTextBlock => NpcTradePanelControl.BuildingsCount;
     private ComboBox ResourceTransferTargetVillageComboBox => ResourceTradingPanelControl.TransferTargetVillage;
-    private ComboBox ResourceTransferSecondTargetVillageComboBox => ResourceTradingPanelControl.TransferSecondTargetVillage;
+    private ItemsControl ResourceTransferAdditionalTargetVillagesItemsControl => ResourceTradingPanelControl.TransferAdditionalTargetVillages;
     private ItemsControl ResourceTransferSourceVillagesItemsControl => ResourceTradingPanelControl.TransferSourceVillages;
     private ComboBox ResourceTransferSourceThresholdComboBox => ResourceTradingPanelControl.SourceThreshold;
     private ComboBox ResourceTransferSourceKeepComboBox => ResourceTradingPanelControl.SourceKeep;
@@ -26,7 +26,6 @@ public partial class MainWindow
 
     internal void OnResourceTransferSettingChanged(object sender, RoutedEventArgs e) => ResourceTransferSetting_Changed(sender, e);
     internal void OnResourceTransferSettingSelectionChanged(object sender, SelectionChangedEventArgs e) => ResourceTransferSetting_SelectionChanged(sender, e);
-    internal void OnResourceTransferSecondTargetClearClicked(object sender, RoutedEventArgs e) => ResourceTransferSecondTargetClearButton_Click(sender, e);
     internal void OnQueueResourceTransferNowClicked(object sender, RoutedEventArgs e) => QueueResourceTransferNowButton_Click(sender, e);
     internal void OnResourceTransferScanVillagesClicked(object sender, RoutedEventArgs e) => ResourceTransferScanVillagesButton_Click(sender, e);
 }

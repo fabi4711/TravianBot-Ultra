@@ -695,13 +695,13 @@ public sealed class QueueStoreAndSchedulerTests : IDisposable
         Assert.Equal(100, parsed.SourceThresholdPercent);
         var serialized = parsed.ToDictionary();
         Assert.Equal(11, serialized.Count);
-        Assert.Equal(string.Empty, serialized[BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName]);
+        Assert.Equal("[]", serialized[BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames]);
         Assert.Equal("[\"A\",\"B\"]", serialized[BotOptionPayloadKeys.ResourceTransferSourceVillageNames]);
         Assert.Equal("false", serialized[BotOptionPayloadKeys.ResourceTransferSendClay]);
     }
 
     [Fact]
-    public void ResourceTransferPayload_RoundTripsSecondTargetVillage()
+    public void ResourceTransferPayload_RoundTripsAdditionalTargetVillages()
     {
         var payload = new ResourceTransferPayload(
             Enabled: true,
@@ -714,10 +714,23 @@ public sealed class QueueStoreAndSchedulerTests : IDisposable
             SendClay: true,
             SendIron: true,
             SendCrop: false,
-            SecondTargetVillageName: " Rohstoffhof ").ToDictionary();
+            AdditionalTargetVillageNames: [" Rohstoffhof ", "Bollwerk"]).ToDictionary();
 
         Assert.True(ResourceTransferPayload.TryFromDictionary(payload, out var parsed));
-        Assert.Equal("Rohstoffhof", parsed!.SecondTargetVillageName);
+        Assert.Equal(["Rohstoffhof", "Bollwerk"], parsed!.AdditionalTargetVillageNames);
+    }
+
+    [Fact]
+    public void ResourceTransferPayload_ReadsLegacySecondTargetAsTargetList()
+    {
+        var payload = new Dictionary<string, string>
+        {
+            [BotOptionPayloadKeys.ResourceTransferTargetVillageName] = "Rohstoffhof",
+            [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = "Bollwerk",
+        };
+
+        Assert.True(ResourceTransferPayload.TryFromDictionary(payload, out var parsed));
+        Assert.Equal(["Bollwerk"], parsed!.AdditionalTargetVillageNames);
     }
 
     [Fact]

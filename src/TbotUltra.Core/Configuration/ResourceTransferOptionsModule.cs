@@ -14,7 +14,7 @@ internal sealed record ResourceTransferOptions(
     bool SendClay,
     bool SendIron,
     bool SendCrop,
-    string SecondTargetVillageName);
+    List<string> AdditionalTargetVillageNames);
 
 internal static class ResourceTransferOptionsModule
 {
@@ -23,6 +23,7 @@ internal static class ResourceTransferOptionsModule
         BotOptionPayloadKeys.ResourceTransferEnabled,
         BotOptionPayloadKeys.ResourceTransferTargetVillageName,
         BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName,
+        BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames,
         BotOptionPayloadKeys.ResourceTransferSourceVillageNames,
         BotOptionPayloadKeys.ResourceTransferSourceThresholdPercent,
         BotOptionPayloadKeys.ResourceTransferSourceKeepPercent,
@@ -45,7 +46,9 @@ internal static class ResourceTransferOptionsModule
             configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendClay, true),
             configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendIron, true),
             configuration.GetValue(BotOptionPayloadKeys.ResourceTransferSendCrop, true),
-            configuration[BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] ?? string.Empty);
+            WithLegacySecondTarget(
+                configuration.GetSection(BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames).Get<List<string>>(),
+                configuration[BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName]));
 
     internal static ResourceTransferOptions Apply(
         BotOptions source,
@@ -62,13 +65,15 @@ internal static class ResourceTransferOptionsModule
             source.ResourceTransferSendClay,
             source.ResourceTransferSendIron,
             source.ResourceTransferSendCrop,
-            source.ResourceTransferSecondTargetVillageName);
+            source.ResourceTransferAdditionalTargetVillageNames);
 
         if (payload is null)
         {
             return result;
         }
 
+        var hasAdditionalTargets = false;
+        string? legacySecondTarget = null;
         foreach (var pair in payload)
         {
             var key = pair.Key.Trim();
@@ -87,9 +92,14 @@ internal static class ResourceTransferOptionsModule
             {
                 result = result with { TargetVillageName = value };
             }
+            else if (key.Equals(BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames, StringComparison.OrdinalIgnoreCase))
+            {
+                hasAdditionalTargets = true;
+                result = result with { AdditionalTargetVillageNames = VillageNameListPayloadCodec.Parse(value) };
+            }
             else if (key.Equals(BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName, StringComparison.OrdinalIgnoreCase))
             {
-                result = result with { SecondTargetVillageName = value };
+                legacySecondTarget = value;
             }
             else if (key.Equals(BotOptionPayloadKeys.ResourceTransferSourceVillageNames, StringComparison.OrdinalIgnoreCase))
             {
@@ -125,7 +135,24 @@ internal static class ResourceTransferOptionsModule
             }
         }
 
+        if (!hasAdditionalTargets && legacySecondTarget is not null)
+        {
+            result = result with { AdditionalTargetVillageNames = WithLegacySecondTarget(null, legacySecondTarget) };
+        }
+
         return result;
+    }
+
+    // Settings and queued payloads written before the target list existed only carry the single second target.
+    internal static List<string> WithLegacySecondTarget(IEnumerable<string>? additionalTargets, string? legacySecondTarget)
+    {
+        var names = VillageNameListPayloadCodec.Normalize(additionalTargets ?? []);
+        if (names.Count == 0 && !string.IsNullOrWhiteSpace(legacySecondTarget))
+        {
+            names.Add(legacySecondTarget.Trim());
+        }
+
+        return names;
     }
 
     internal static BotOptions ApplyTo(this ResourceTransferOptions values, BotOptions source)
@@ -133,7 +160,7 @@ internal static class ResourceTransferOptionsModule
         {
             ResourceTransferEnabled = values.Enabled,
             ResourceTransferTargetVillageName = values.TargetVillageName,
-            ResourceTransferSecondTargetVillageName = values.SecondTargetVillageName,
+            ResourceTransferAdditionalTargetVillageNames = values.AdditionalTargetVillageNames,
             ResourceTransferSourceVillageNames = values.SourceVillageNames,
             ResourceTransferSourceThresholdPercent = values.SourceThresholdPercent,
             ResourceTransferSourceKeepPercent = values.SourceKeepPercent,

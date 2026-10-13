@@ -382,8 +382,8 @@ public sealed record BotOptions
     [ConfigurationKeyName(BotOptionPayloadKeys.ResourceTransferTargetVillageName)]
     public string ResourceTransferTargetVillageName { get; init; } = string.Empty;
 
-    [ConfigurationKeyName(BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName)]
-    public string ResourceTransferSecondTargetVillageName { get; init; } = string.Empty;
+    [ConfigurationKeyName(BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames)]
+    public List<string> ResourceTransferAdditionalTargetVillageNames { get; init; } = [];
 
     [ConfigurationKeyName(BotOptionPayloadKeys.ResourceTransferSourceVillageNames)]
     public List<string> ResourceTransferSourceVillageNames { get; init; } = [];
