@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using TbotUltra.Core.Configuration;
 using Xunit;
 
@@ -12,7 +13,7 @@ public sealed class ResourceTransferPayloadApplierTests
         {
             [BotOptionPayloadKeys.ResourceTransferEnabled] = "true",
             [BotOptionPayloadKeys.ResourceTransferTargetVillageName] = "Target",
-            [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = "Second",
+            [BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames] = "[\"Second\",\"Third\",\"second\"]",
             [BotOptionPayloadKeys.ResourceTransferSourceVillageNames] = "One,Two,one",
             [BotOptionPayloadKeys.ResourceTransferSourceThresholdPercent] = "101",
             [BotOptionPayloadKeys.ResourceTransferSourceKeepPercent] = "100",
@@ -27,7 +28,7 @@ public sealed class ResourceTransferPayloadApplierTests
 
         Assert.True(result.ResourceTransferEnabled);
         Assert.Equal("Target", result.ResourceTransferTargetVillageName);
-        Assert.Equal("Second", result.ResourceTransferSecondTargetVillageName);
+        Assert.Equal(new[] { "Second", "Third" }, result.ResourceTransferAdditionalTargetVillageNames);
         Assert.Equal(new[] { "One", "Two" }, result.ResourceTransferSourceVillageNames);
         Assert.Equal(100, result.ResourceTransferSourceThresholdPercent);
         Assert.Equal(99, result.ResourceTransferSourceKeepPercent);
@@ -62,22 +63,71 @@ public sealed class ResourceTransferPayloadApplierTests
     }
 
     [Theory]
-    [InlineData("Kornkammer", "Rohstoffhof", new[] { "Kornkammer", "Rohstoffhof" })]
-    [InlineData("Kornkammer", "", new[] { "Kornkammer" })]
-    [InlineData("Kornkammer", "kornkammer", new[] { "Kornkammer" })]
-    [InlineData("", "Rohstoffhof", new[] { "Rohstoffhof" })]
-    public void ResolveTargetNames_KeepsPrimaryFirstAndDropsEmptyOrDuplicateSecondTarget(
+    [InlineData("Kornkammer", new[] { "Rohstoffhof", "Bollwerk" }, new[] { "Kornkammer", "Rohstoffhof", "Bollwerk" })]
+    [InlineData("Kornkammer", new string[0], new[] { "Kornkammer" })]
+    [InlineData("Kornkammer", new[] { "kornkammer", " ", "Bollwerk" }, new[] { "Kornkammer", "Bollwerk" })]
+    [InlineData("", new[] { "Rohstoffhof" }, new[] { "Rohstoffhof" })]
+    public void ResolveTargetNames_KeepsPrimaryFirstAndDropsEmptyOrDuplicateAdditionalTargets(
         string target,
-        string secondTarget,
+        string[] additionalTargets,
         string[] expected)
     {
         var options = new BotOptions
         {
             ResourceTransferTargetVillageName = target,
-            ResourceTransferSecondTargetVillageName = secondTarget,
+            ResourceTransferAdditionalTargetVillageNames = additionalTargets.ToList(),
         };
 
         Assert.Equal(expected, TbotUltra.Worker.Services.TravianClient.ResolveResourceTransferTargetNames(options));
+    }
+
+    [Fact]
+    public void Apply_MigratesLegacySecondTargetWhenNoTargetListIsGiven()
+    {
+        var payload = new Dictionary<string, string>
+        {
+            [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = " Bollwerk ",
+        };
+
+        var result = BotOptionsPayloadApplier.Apply(new BotOptions(), payload);
+
+        Assert.Equal(new[] { "Bollwerk" }, result.ResourceTransferAdditionalTargetVillageNames);
+    }
+
+    [Fact]
+    public void Apply_EmptyTargetListWinsOverLegacySecondTarget()
+    {
+        var payload = new Dictionary<string, string>
+        {
+            [BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames] = "[]",
+            [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = "Bollwerk",
+        };
+
+        var result = BotOptionsPayloadApplier.Apply(new BotOptions(), payload);
+
+        Assert.Empty(result.ResourceTransferAdditionalTargetVillageNames);
+    }
+
+    [Fact]
+    public void FromConfiguration_MigratesLegacySecondTargetAndPrefersTargetList()
+    {
+        var legacy = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = "Bollwerk",
+            })
+            .Build();
+        var migrated = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = string.Empty,
+                [$"{BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames}:0"] = "Bollwerk",
+                [$"{BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames}:1"] = "Kornkammer",
+            })
+            .Build();
+
+        Assert.Equal(new[] { "Bollwerk" }, BotOptionsFactory.FromConfiguration(legacy).ResourceTransferAdditionalTargetVillageNames);
+        Assert.Equal(new[] { "Bollwerk", "Kornkammer" }, BotOptionsFactory.FromConfiguration(migrated).ResourceTransferAdditionalTargetVillageNames);
     }
 
     [Fact]

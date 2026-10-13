@@ -15,6 +15,7 @@ public sealed class ResourceTransferVillageItem : INotifyPropertyChanged
 
     private bool _isSource;
     private bool _isTarget;
+    private bool _isAdditionalTarget;
     private Dictionary<string, ResourceStorageForecast> _baseForecasts = new(StringComparer.OrdinalIgnoreCase);
     private DateTimeOffset? _baseForecastCapturedAtUtc;
     private string _woodPercentText = "-";
@@ -67,18 +68,49 @@ public sealed class ResourceTransferVillageItem : INotifyPropertyChanged
             _isTarget = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(CanSelectAsSource));
+            OnPropertyChanged(nameof(CanSelectAsAdditionalTarget));
             OnPropertyChanged(nameof(SourceStatusText));
 
             if (_isTarget)
+            {
+                IsSource = false;
+                IsAdditionalTarget = false;
+            }
+        }
+    }
+
+    public bool IsAdditionalTarget
+    {
+        get => _isAdditionalTarget;
+        set
+        {
+            if (_isTarget && value)
+            {
+                value = false;
+            }
+
+            if (_isAdditionalTarget == value)
+            {
+                return;
+            }
+
+            _isAdditionalTarget = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(CanSelectAsSource));
+            OnPropertyChanged(nameof(SourceStatusText));
+
+            if (_isAdditionalTarget)
             {
                 IsSource = false;
             }
         }
     }
 
-    public bool CanSelectAsSource => !IsTarget;
+    public bool CanSelectAsSource => !IsTarget && !IsAdditionalTarget;
 
-    public string SourceStatusText => IsTarget ? "Target" : string.Empty;
+    public bool CanSelectAsAdditionalTarget => !IsTarget;
+
+    public string SourceStatusText => IsTarget || IsAdditionalTarget ? "Target" : string.Empty;
 
     public string WoodPercentText
     {

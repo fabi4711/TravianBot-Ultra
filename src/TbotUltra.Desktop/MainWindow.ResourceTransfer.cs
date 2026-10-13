@@ -31,6 +31,7 @@ public partial class MainWindow
         {
             var targetName = options.ResourceTransferTargetVillageName;
             var selectedSources = options.ResourceTransferSourceVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var selectedAdditionalTargets = options.ResourceTransferAdditionalTargetVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var previousItems = _resourceTransferVillages
                 .Where(item => !string.IsNullOrWhiteSpace(item.Name))
                 .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
@@ -49,6 +50,7 @@ public partial class MainWindow
                     CoordX = village.CoordX,
                     CoordY = village.CoordY,
                     IsSource = selectedSources.Contains(village.Name),
+                    IsAdditionalTarget = selectedAdditionalTargets.Contains(village.Name),
                 };
                 if (previousItems.TryGetValue(village.Name, out var previous))
                 {
@@ -61,7 +63,8 @@ public partial class MainWindow
             // A village refresh can briefly list only some villages (e.g. right after a re-login). Writing the UI
             // state back then replaced the configured targets/sources with the capital fallback and disabled the
             // transfer loop group, so an incomplete list must leave the saved settings and the toggle alone.
-            missingConfiguredVillages = new[] { options.ResourceTransferTargetVillageName, options.ResourceTransferSecondTargetVillageName }
+            missingConfiguredVillages = new[] { options.ResourceTransferTargetVillageName }
+                .Concat(options.ResourceTransferAdditionalTargetVillageNames)
                 .Concat(options.ResourceTransferSourceVillageNames)
                 .Where(name => !string.IsNullOrWhiteSpace(name) && FindResourceTransferVillage(name) is null)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -72,8 +75,6 @@ public partial class MainWindow
             {
                 ResourceTransferTargetVillageComboBox.SelectedItem = selectedTarget;
             }
-
-            ResourceTransferSecondTargetVillageComboBox.SelectedItem = FindResourceTransferVillage(options.ResourceTransferSecondTargetVillageName);
 
             UpdateResourceTransferTargetSourceState(persist: false, allowDisableLoopGroup: missingConfiguredVillages.Count == 0);
         }
@@ -120,13 +121,13 @@ public partial class MainWindow
                 ResourceTransferTargetVillageComboBox.SelectedItem = target;
             }
 
-            ResourceTransferSecondTargetVillageComboBox.SelectedItem = FindResourceTransferVillage(options.ResourceTransferSecondTargetVillageName);
-
             UpdateResourceTransferTargetSourceState(persist: false);
 
             var selectedSources = options.ResourceTransferSourceVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var selectedAdditionalTargets = options.ResourceTransferAdditionalTargetVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var village in _resourceTransferVillages)
             {
+                village.IsAdditionalTarget = selectedAdditionalTargets.Contains(village.Name);
                 village.IsSource = selectedSources.Contains(village.Name);
             }
 
@@ -199,25 +200,21 @@ public partial class MainWindow
                 string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase));
     }
 
-    private string ReadResourceTransferSecondTargetName()
+    private List<string> ReadResourceTransferAdditionalTargetNames()
     {
-        var target = ResourceTransferTargetVillageComboBox.SelectedItem as ResourceTransferVillageItem;
-        var secondTarget = ResourceTransferSecondTargetVillageComboBox.SelectedItem as ResourceTransferVillageItem;
-        if (secondTarget is null
-            || string.IsNullOrWhiteSpace(secondTarget.Name)
-            || string.Equals(secondTarget.Name, target?.Name, StringComparison.OrdinalIgnoreCase))
-        {
-            return string.Empty;
-        }
-
-        return secondTarget.Name;
+        return _resourceTransferVillages
+            .Where(item => item.IsAdditionalTarget && !item.IsTarget)
+            .Select(item => item.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private ResourceTransferPayload BuildResourceTransferPayload()
     {
         var target = ResourceTransferTargetVillageComboBox.SelectedItem as ResourceTransferVillageItem;
         var sourceNames = _resourceTransferVillages
-            .Where(item => item.IsSource && !item.IsTarget)
+            .Where(item => item.IsSource && !item.IsTarget && !item.IsAdditionalTarget)
             .Select(item => item.Name)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -234,7 +231,7 @@ public partial class MainWindow
             SendClay: ResourceTransferClayCheckBox.IsChecked == true,
             SendIron: ResourceTransferIronCheckBox.IsChecked == true,
             SendCrop: ResourceTransferCropCheckBox.IsChecked == true,
-            SecondTargetVillageName: ReadResourceTransferSecondTargetName());
+            AdditionalTargetVillageNames: ReadResourceTransferAdditionalTargetNames());
     }
 
     private void PersistResourceTransferSettings()
@@ -247,7 +244,12 @@ public partial class MainWindow
         var settings = BuildResourceTransferPayload();
         var config = _botConfigStore.Load();
         config[BotOptionPayloadKeys.ResourceTransferTargetVillageName] = settings.TargetVillageName;
-        config[BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = settings.SecondTargetVillageName;
+        config[BotOptionPayloadKeys.ResourceTransferAdditionalTargetVillageNames] = new JsonArray(
+            (settings.AdditionalTargetVillageNames ?? [])
+                .Select(name => JsonValue.Create(name)!)
+                .ToArray());
+        // Blank the legacy key so it cannot bring back a cleared target through the migration fallback.
+        config[BotOptionPayloadKeys.ResourceTransferSecondTargetVillageName] = string.Empty;
         config[BotOptionPayloadKeys.ResourceTransferSourceVillageNames] = new JsonArray(
             settings.SourceVillageNames
                 .Select(name => JsonValue.Create(name)!)
@@ -270,8 +272,7 @@ public partial class MainWindow
 
     private void ResourceTransferSetting_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ReferenceEquals(sender, ResourceTransferTargetVillageComboBox)
-            || ReferenceEquals(sender, ResourceTransferSecondTargetVillageComboBox))
+        if (ReferenceEquals(sender, ResourceTransferTargetVillageComboBox))
         {
             UpdateResourceTransferTargetSourceState(persist: true);
             return;
@@ -281,14 +282,10 @@ public partial class MainWindow
         UpdateResourceTransferStatus();
     }
 
-    private void ResourceTransferSecondTargetClearButton_Click(object sender, RoutedEventArgs e)
-    {
-        ResourceTransferSecondTargetVillageComboBox.SelectedItem = null;
-    }
-
     private void ResourceTransferVillage_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (string.Equals(e.PropertyName, nameof(ResourceTransferVillageItem.IsSource), StringComparison.Ordinal))
+        if (string.Equals(e.PropertyName, nameof(ResourceTransferVillageItem.IsSource), StringComparison.Ordinal)
+            || string.Equals(e.PropertyName, nameof(ResourceTransferVillageItem.IsAdditionalTarget), StringComparison.Ordinal))
         {
             PersistResourceTransferSettings();
             UpdateResourceTransferStatus();
@@ -299,17 +296,14 @@ public partial class MainWindow
     {
         var target = ResourceTransferTargetVillageComboBox.SelectedItem as ResourceTransferVillageItem;
         var targetName = target?.Name ?? string.Empty;
-        var secondTargetName = ReadResourceTransferSecondTargetName();
         var wasSuppressed = _suppressResourceTransferConfigWrite;
         _suppressResourceTransferConfigWrite = true;
         try
         {
             foreach (var village in _resourceTransferVillages)
             {
-                village.IsTarget = (!string.IsNullOrWhiteSpace(targetName)
-                        && string.Equals(village.Name, targetName, StringComparison.OrdinalIgnoreCase))
-                    || (!string.IsNullOrWhiteSpace(secondTargetName)
-                        && string.Equals(village.Name, secondTargetName, StringComparison.OrdinalIgnoreCase));
+                village.IsTarget = !string.IsNullOrWhiteSpace(targetName)
+                    && string.Equals(village.Name, targetName, StringComparison.OrdinalIgnoreCase);
             }
         }
         finally
@@ -476,11 +470,10 @@ public partial class MainWindow
             return false;
         }
 
-        var secondTargetName = ReadResourceTransferSecondTargetName();
         var sourceCount = _resourceTransferVillages.Count(item =>
             item.IsSource
-            && !string.Equals(item.Name, target.Name, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(item.Name, secondTargetName, StringComparison.OrdinalIgnoreCase));
+            && !item.IsAdditionalTarget
+            && !string.Equals(item.Name, target.Name, StringComparison.OrdinalIgnoreCase));
         if (sourceCount <= 0)
         {
             reason = "Select at least one source village.";
@@ -519,7 +512,7 @@ public partial class MainWindow
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count(name => !string.Equals(name, options.ResourceTransferTargetVillageName, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(name, options.ResourceTransferSecondTargetVillageName, StringComparison.OrdinalIgnoreCase));
+                && !options.ResourceTransferAdditionalTargetVillageNames.Contains(name, StringComparer.OrdinalIgnoreCase));
         if (sourceCount <= 0)
         {
             reason = "Select at least one source village.";
