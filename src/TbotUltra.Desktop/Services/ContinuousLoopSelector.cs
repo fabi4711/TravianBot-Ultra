@@ -170,6 +170,18 @@ internal static class ContinuousLoopSelector
                 && item.NextAttemptAt <= now);
     }
 
+    // The alliance check is rescheduled ~12h ahead after each run; as group head it must not block farm-list sends.
+    internal static QueueItem? SelectReadyFarmingGroupItem(
+        IReadOnlyList<QueueItem> villageItems,
+        DateTimeOffset now)
+    {
+        return SelectReadyGroupHead(villageItems, now)
+            ?? villageItems.FirstOrDefault(item =>
+                string.Equals(item.TaskName, "send_farmlists", StringComparison.OrdinalIgnoreCase)
+                && item.Status == QueueStatus.Pending
+                && item.NextAttemptAt <= now);
+    }
+
     internal static IReadOnlyList<QueueItem> SelectVillageItems(
         IReadOnlyList<QueueItem> orderedItems,
         IReadOnlyDictionary<Guid, string?> villageKeys,
