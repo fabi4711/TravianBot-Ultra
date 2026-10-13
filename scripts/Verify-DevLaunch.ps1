@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$LogPath,
     [string]$StatusPath,
+    [string]$CancelPath,
     [switch]$DebugBuildOnly,
     [string]$OutputPath
 )
@@ -21,6 +22,13 @@ function Write-LaunchStatus {
     }
 }
 
+function Exit-IfCancelled {
+    if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) {
+        Add-Content -LiteralPath $LogPath -Value "Launch cancelled by user." -Encoding UTF8
+        exit 2
+    }
+}
+
 function Invoke-PreflightStep {
     param(
         [string]$Name,
@@ -28,14 +36,31 @@ function Invoke-PreflightStep {
         [int]$Progress
     )
 
+    Exit-IfCancelled
     Write-LaunchStatus $Progress "$Name in progress..."
     Add-Content -LiteralPath $LogPath -Value "`r`n=== $Name ===" -Encoding UTF8
     $outputPath = Join-Path $logDirectory "preflight-step.stdout.log"
     $errorPath = Join-Path $logDirectory "preflight-step.stderr.log"
     try {
         $process = Start-Process -FilePath $DotnetExe -ArgumentList $Arguments `
-            -WorkingDirectory $repoRoot -WindowStyle Hidden -Wait -PassThru `
+            -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru `
             -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath
+        while (-not $process.WaitForExit(200)) {
+            if ($CancelPath -and [System.IO.File]::Exists($CancelPath)) {
+                # Stop only the process tree started for this preflight step.
+                $stop = [System.Diagnostics.ProcessStartInfo]::new("taskkill.exe", "/PID $($process.Id) /T /F")
+                $stop.UseShellExecute = $false
+                $stop.CreateNoWindow = $true
+                $stopProcess = [System.Diagnostics.Process]::Start($stop)
+                $stopProcess.WaitForExit()
+                if (-not $process.HasExited) {
+                    $process.Kill()
+                    $process.WaitForExit()
+                }
+                Exit-IfCancelled
+            }
+        }
+        Exit-IfCancelled
         Get-Content -LiteralPath $outputPath -ErrorAction SilentlyContinue |
             Add-Content -LiteralPath $LogPath -Encoding UTF8
         Get-Content -LiteralPath $errorPath -ErrorAction SilentlyContinue |

@@ -9,8 +9,9 @@ If Not fso.FileExists(progressScriptPath) Then
 End If
 progressStatusPath = shell.ExpandEnvironmentStrings("%TEMP%") & "\" & fso.GetTempName
 progressReadyPath = progressStatusPath & ".ready"
+progressCancelPath = progressStatusPath & ".cancel"
 WriteLaunchStatus progressStatusPath, 4, "Checking launcher requirements..."
-progressCommand = "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & progressScriptPath & """ -StatusPath """ & progressStatusPath & """ -ReadyPath """ & progressReadyPath & """"
+progressCommand = "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & progressScriptPath & """ -StatusPath """ & progressStatusPath & """ -ReadyPath """ & progressReadyPath & """ -CancelPath """ & progressCancelPath & """"
 shell.Run progressCommand, 0, False
 For progressWait = 1 To 80
     If fso.FileExists(progressReadyPath) Then
@@ -18,6 +19,7 @@ For progressWait = 1 To 80
     End If
     WScript.Sleep 50
 Next
+QuitIfLaunchCancelled
 If Not fso.FileExists(progressReadyPath) Then
     WriteLaunchStatus progressStatusPath, -1, "Progress window could not be opened."
     MsgBox "The launch progress window could not be opened. The app was not started.", vbCritical, "Tbot Ultra"
@@ -44,6 +46,7 @@ If Len(dotnetExe) = 0 Then
 ElseIf Not fso.FileExists(projectPath) Then
     WriteLaunchFailure progressStatusPath, "Desktop project is missing.", projectPath, ""
 Else
+    QuitIfLaunchCancelled
     shell.CurrentDirectory = projectDir
     WriteLaunchStatus progressStatusPath, 7, "Checking changed source files..."
 
@@ -77,9 +80,11 @@ Else
         WScript.Quit 1
     End If
 
+    QuitIfLaunchCancelled
     If latestCheckSource > ReadBuildStamp(fso, checkStampPath) Then
-        checkCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & checkLogPath & """ -StatusPath """ & progressStatusPath & """"
+        checkCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & checkLogPath & """ -StatusPath """ & progressStatusPath & """ -CancelPath """ & progressCancelPath & """"
         checkExitCode = shell.Run(checkCommand, 0, True)
+        QuitIfLaunchCancelled
         If checkExitCode <> 0 Then
             WriteLaunchFailure progressStatusPath, "Build or tests failed. The app was not started.", _
                 ReadPreflightFailure(fso, checkLogPath), checkLogPath
@@ -87,9 +92,11 @@ Else
         End If
         WriteBuildStamp fso, checkStampPath, latestCheckSource
     Else
+        QuitIfLaunchCancelled
         WriteLaunchStatus progressStatusPath, 82, "Build and tests are already up to date."
     End If
 
+    QuitIfLaunchCancelled
     If IsAppRunning(shell) Then
         If Not shell.AppActivate("Tbot Ultra") Then
             WriteLaunchFailure progressStatusPath, "Tbot Ultra is already running.", _
@@ -102,9 +109,11 @@ Else
     End If
 
     If needsBuild Then
+        QuitIfLaunchCancelled
         WriteLaunchStatus progressStatusPath, 86, "Building the desktop app..."
-        buildCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & debugBuildLogPath & """ -StatusPath """ & progressStatusPath & """ -DebugBuildOnly -OutputPath """ & devOutputDir & """"
+        buildCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & debugBuildLogPath & """ -StatusPath """ & progressStatusPath & """ -CancelPath """ & progressCancelPath & """ -DebugBuildOnly -OutputPath """ & devOutputDir & """"
         buildExitCode = shell.Run(buildCommand, 0, True)
+        QuitIfLaunchCancelled
         If buildExitCode <> 0 Then
             WriteLaunchFailure progressStatusPath, "Desktop build failed. The app was not started.", _
                 ReadPreflightFailure(fso, debugBuildLogPath), debugBuildLogPath
@@ -113,15 +122,25 @@ Else
         Else
             WriteBuildStamp fso, sourceStampPath, latestSource
             WriteLaunchStatus progressStatusPath, 96, "Opening Tbot Ultra..."
+            QuitIfLaunchCancelled
             LaunchAndActivate shell, exePath
             WriteLaunchStatus progressStatusPath, 100, "Tbot Ultra is ready."
         End If
     Else
         WriteLaunchStatus progressStatusPath, 96, "Opening Tbot Ultra..."
+        QuitIfLaunchCancelled
         LaunchAndActivate shell, exePath
         WriteLaunchStatus progressStatusPath, 100, "Tbot Ultra is ready."
     End If
 End If
+
+Sub QuitIfLaunchCancelled
+    If fso.FileExists(progressCancelPath) Then
+        On Error Resume Next
+        fso.DeleteFile progressCancelPath, True
+        WScript.Quit 2
+    End If
+End Sub
 
 Sub WriteLaunchStatus(statusPath, progressValue, message)
     On Error Resume Next

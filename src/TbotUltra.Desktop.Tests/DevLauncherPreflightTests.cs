@@ -22,7 +22,11 @@ public sealed class DevLauncherPreflightTests
         Assert.Contains("Invoke-PreflightStep \"Release build\"", preflight);
         Assert.Contains("Invoke-PreflightStep \"Worker tests\"", preflight);
         Assert.Contains("Invoke-PreflightStep \"Desktop tests\"", preflight);
-        Assert.Contains("-WindowStyle Hidden -Wait -PassThru", preflight);
+        Assert.Contains("-WindowStyle Hidden -PassThru", preflight);
+        Assert.Contains("$process.WaitForExit(200)", preflight);
+        Assert.Contains("taskkill.exe", preflight);
+        Assert.Contains("Exit-IfCancelled", preflight);
+        Assert.Contains("-CancelPath \"\"\" & progressCancelPath", launcher);
         Assert.Contains("exit $process.ExitCode", preflight);
     }
 
@@ -41,7 +45,7 @@ public sealed class DevLauncherPreflightTests
         Assert.Contains("WriteLaunchFailure progressStatusPath", launcher);
         Assert.DoesNotContain("MsgBox \"Local CI check failed", launcher, StringComparison.Ordinal);
         Assert.Contains("Write-LaunchStatus $Progress", preflight);
-        Assert.Contains("-WindowStyle Hidden -Wait -PassThru", preflight);
+        Assert.Contains("-WindowStyle Hidden -PassThru", preflight);
         Assert.Contains("Invoke-PreflightStep \"Desktop debug build\"", preflight);
         Assert.Contains("ProgressBar x:Name=\"LaunchProgress\"", progressWindow);
         Assert.Contains("x:Name=\"StepText\" Grid.Column=\"1\" Text=\"STARTING\"", progressWindow);
@@ -50,6 +54,18 @@ public sealed class DevLauncherPreflightTests
         Assert.Contains("Border x:Name=\"ErrorPanel\"", progressWindow);
         Assert.Contains("Button x:Name=\"OpenLogButton\"", progressWindow);
         Assert.Contains("Button x:Name=\"CloseButton\"", progressWindow);
+        Assert.Contains("Grid.Row=\"8\" Content=\"Close\"", progressWindow);
+        Assert.Contains("Button x:Name=\"MinimizeButton\"", progressWindow);
+        Assert.Contains("<Rectangle Width=\"10\" Height=\"1\" Fill=\"#ADBAC7\" />", progressWindow);
+        Assert.DoesNotContain("Content=\"—\"", progressWindow);
+        Assert.Contains("Background=\"#2D1213\" Foreground=\"#FF7B72\"", progressWindow);
+        Assert.Contains("BorderBrush=\"#B62324\"", progressWindow);
+        Assert.Contains("ShowInTaskbar=\"True\"", progressWindow);
+        Assert.Contains("$window.DragMove()", progressWindow);
+        Assert.Contains("$window.Add_Closing", progressWindow);
+        Assert.Contains("[System.IO.File]::WriteAllText($CancelPath, \"cancel\")", progressWindow);
+        Assert.Contains("progressCancelPath", launcher);
+        Assert.Contains("QuitIfLaunchCancelled", launcher);
         Assert.Contains("$window.Add_ContentRendered", progressWindow);
         Assert.Contains("$script:launchTimer = [System.Diagnostics.Stopwatch]::StartNew()", progressWindow);
         Assert.Contains("$script:launchTimer.Elapsed", progressWindow);
