@@ -62,6 +62,8 @@ html, body {
 .box, .border { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .border { border-style: solid; }
 .scroll { overflow: auto; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+/* Like a WPF ScrollViewer, content keeps its natural height and scrolls instead of being squeezed. */
+.scroll > * { flex-shrink: 0; }
 
 [data-ha="l"] { justify-self: start; }
 [data-ha="c"] { justify-self: center; }
