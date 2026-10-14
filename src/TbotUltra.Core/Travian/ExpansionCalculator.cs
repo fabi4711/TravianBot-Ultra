@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace TbotUltra.Core.Travian;
 
 public enum ExpansionBuildingType
@@ -45,6 +47,46 @@ public static class ExpansionCalculator
 
     public static int ExpansionSlots(ExpansionBuildingType building, int level)
         => SlotLevels[building].Count(required => level >= required);
+
+    /// <summary>The building level that unlocks the next expansion slot, or null when every slot is unlocked.</summary>
+    public static int? NextSlotLevel(ExpansionBuildingType building, int level)
+        => SlotLevels[building].Where(required => required > level).Select(required => (int?)required).FirstOrDefault();
+
+    /// <summary>
+    /// Reads "used/total" from the settlement-slot footer ("5/5"). Every non-digit is dropped, so locale
+    /// separators and bidirectional markers do not matter.
+    /// </summary>
+    public static (int Used, int Total)? ParseSettlementSlots(string? text)
+        => ParseFraction(text) is var (used, total) && total > 0 ? ((int)used, (int)total) : null;
+
+    /// <summary>Reads "current / needed" culture points from the next-slot bar caption.</summary>
+    public static (long Current, long Needed)? ParseCulturePointsProgress(string? caption)
+        => ParseFraction(caption) is var (current, needed) && needed > 0 ? (current, needed) : null;
+
+    /// <summary>Seconds until the culture points reach the next slot, or null when nothing is produced.</summary>
+    public static int? SecondsUntilCulturePoints(long current, long needed, long perDay)
+    {
+        if (current >= needed)
+        {
+            return 0;
+        }
+
+        return perDay > 0 ? (int)Math.Ceiling((needed - current) * 86400d / perDay) : null;
+    }
+
+    /// <summary>Reads a whole number such as the daily culture-point total, ignoring separators and markers.</summary>
+    public static long? ParseWholeNumber(string? text)
+        => long.TryParse(new string((text ?? string.Empty).Where(char.IsAsciiDigit).ToArray()), NumberStyles.None, CultureInfo.InvariantCulture, out var value)
+            ? value
+            : null;
+
+    private static (long, long)? ParseFraction(string? text)
+    {
+        var parts = (text ?? string.Empty).Split('/');
+        return parts.Length == 2 && ParseWholeNumber(parts[0]) is long left && ParseWholeNumber(parts[1]) is long right
+            ? (left, right)
+            : null;
+    }
 
     /// <summary>
     /// Settlers still needed to fill every free expansion slot. Settlers at home, in training and on the way

@@ -56,6 +56,39 @@ public sealed class ExpansionCalculatorTests
         Assert.Equal(0, plan.SettlersToTrain);
     }
 
+    [Theory]
+    [InlineData(ExpansionBuildingType.Residence, 9, 10)]
+    [InlineData(ExpansionBuildingType.Residence, 18, 20)]
+    [InlineData(ExpansionBuildingType.Residence, 20, null)]
+    [InlineData(ExpansionBuildingType.Palace, 10, 15)]
+    public void NextSlotLevel_IsTheNextUnlockingLevel(ExpansionBuildingType building, int level, int? expected)
+    {
+        Assert.Equal(expected, ExpansionCalculator.NextSlotLevel(building, level));
+    }
+
+    [Fact]
+    public void ParseSettlementSlots_ReadsTheFooterFraction()
+    {
+        Assert.Equal((5, 5), ExpansionCalculator.ParseSettlementSlots("‭‭5‬/‭5‬‬"));
+        Assert.Null(ExpansionCalculator.ParseSettlementSlots(""));
+    }
+
+    [Fact]
+    public void ParseCulturePointsProgress_IgnoresTextSeparatorsAndBidiMarkers()
+    {
+        var progress = ExpansionCalculator.ParseCulturePointsProgress("Nächster Siedlungs-Slot: ‭‭5.091‬ / ‭6.500‬‬ Kulturpunkte");
+
+        Assert.Equal((5091L, 6500L), progress);
+    }
+
+    [Fact]
+    public void SecondsUntilCulturePoints_UsesTheDailyProduction()
+    {
+        Assert.Equal(43200, ExpansionCalculator.SecondsUntilCulturePoints(500, 1000, 1000));
+        Assert.Equal(0, ExpansionCalculator.SecondsUntilCulturePoints(1000, 1000, 1000));
+        Assert.Null(ExpansionCalculator.SecondsUntilCulturePoints(500, 1000, 0));
+    }
+
     [Fact]
     public void EvaluateFounding_ReadyWhenEveryRequirementIsMet()
     {
