@@ -7,7 +7,9 @@
       <views:ResourcesPanel x:Name="ResourcesContent" />
     </TabItem>
     <TabItem x:Name="TradingTabItem" Header="Trading">
-      <views:NpcTradePanel x:Name="TradingContent" Section="Trading" />
+      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <views:NpcTradePanel x:Name="TradingContent" Section="Trading" />
+      </ScrollViewer>
     </TabItem>
   </TabControl>
 </UserControl>
