@@ -269,7 +269,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             if (remembered is not null)
             {
                 var restoredPayload = port.BuildVillagePayload(village);
-                restoredPayload[BotOptionPayloadKeys.TownHallCelebrationMode] = remembered.Mode;
+                restoredPayload[BotOptionPayloadKeys.TownHallCelebrationMode] = mode;
                 var restoredItem = runtimeItems.EnqueueNew(new AutomationRuntimeItemSpec(
                     "run_town_hall_celebration",
                     "Town Hall celebration",

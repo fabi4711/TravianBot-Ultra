@@ -263,6 +263,28 @@ public sealed class ContinuousRuntimeItemPreparationTests
             ContinuousLoopSelector.ResolveFarmListAllianceCheckDelay([succeeded, failed], now, TimeSpan.Zero));
     }
 
+    [Fact]
+    public async Task RestoredTownHallCelebration_UsesConfiguredModeForTheNextCelebration()
+    {
+        var port = new InMemoryPort
+        {
+            EnabledGroups = [QueueGroup.TownHallCelebration],
+            ConsideredGroups = [QueueGroup.TownHallCelebration],
+            Villages = [new AutomationRuntimeVillage("1:2", "Alpha", null, false, 1, 2)],
+            TownHallMode = TownHallCelebrationDefaults.Big,
+            ActiveTownHallState = new TownHallCelebrationState(
+                TownHallCelebrationDefaults.Small,
+                DateTimeOffset.UtcNow.AddHours(1),
+                []),
+        };
+
+        await new ContinuousRuntimeItemPreparation(port).PrepareAsync(new BotOptions(), default);
+
+        var item = Assert.Single(port.Queue.Items);
+        Assert.Equal("run_town_hall_celebration", item.TaskName);
+        Assert.Equal(TownHallCelebrationDefaults.Big, item.Payload[BotOptionPayloadKeys.TownHallCelebrationMode]);
+    }
+
     private sealed class InMemoryPort : IContinuousRuntimeItemPreparationPort
     {
         public IReadOnlyList<QueueGroup> EnabledGroups { get; init; } = [];
@@ -273,6 +295,8 @@ public sealed class ContinuousRuntimeItemPreparationTests
         public bool GoldClubEnabled { get; init; } = true;
         public bool MissingGoldClubBlocked { get; private set; }
         public bool ResourceTransferReady { get; init; }
+        public string? TownHallMode { get; init; }
+        public TownHallCelebrationState? ActiveTownHallState { get; init; }
         public int EnsureFarmListsReadyCalls { get; private set; }
         public AutomationFarmListSelection FarmListSelection { get; init; } = new([], [], 0);
         public InMemoryQueuePort Queue { get; } = new();
@@ -315,8 +339,9 @@ public sealed class ContinuousRuntimeItemPreparationTests
         public int? ResolveActiveTroopTrainingQueueWaitSeconds(
             AutomationRuntimeVillage village,
             BotOptions options) => null;
-        public string? LoadTownHallMode(string villageKey) => null;
-        public TownHallCelebrationState? LoadActiveTownHallState(string villageKey, DateTimeOffset now) => null;
+        public string? LoadTownHallMode(string villageKey) => TownHallMode;
+        public TownHallCelebrationState? LoadActiveTownHallState(string villageKey, DateTimeOffset now) =>
+            ActiveTownHallState;
         public bool DeferPendingItem(Guid itemId, Dictionary<string, string>? payload, TimeSpan delay) => true;
         public ValueTask<bool> ResolveGoldClubStatusAsync(
             BotOptions options,
