@@ -72,4 +72,13 @@ public sealed class MarketplaceCropOfferPlannerTests
 
     private static IReadOnlyDictionary<string, long> Stock(long wood = 0, long clay = 0, long iron = 0, long crop = 0)
         => new Dictionary<string, long> { ["wood"] = wood, ["clay"] = clay, ["iron"] = iron, ["crop"] = crop };
+
+    [Theory]
+    [InlineData("textButtonV2 toggle activeNotClickable active orange", true)]
+    [InlineData("textButtonV2 toggle activeNotClickable grey", false)]
+    [InlineData(null, false)]
+    public void HasCssClass_MatchesWholeClassNamesOnly(string? classes, bool expected)
+    {
+        Assert.Equal(expected, TbotUltra.Worker.Services.TravianClient.HasCssClass(classes, "active"));
+    }
 }
