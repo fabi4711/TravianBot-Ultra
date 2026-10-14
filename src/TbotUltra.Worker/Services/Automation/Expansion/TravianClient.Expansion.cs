@@ -58,6 +58,12 @@ public sealed partial class TravianClient
             return new ExpansionStepResult(false, 3600, $"Train settlers: {plan.Reason}");
         }
 
+        if (plan.FreeSlots == 0 && ExpansionCalculator.NextSlotLevel(type, level) is int nextSlotLevel)
+        {
+            Notify($"[expansion] all {plan.ExpansionSlots} slot(s) of {type} used; waiting for level {nextSlotLevel} to unlock the next one.");
+            return new ExpansionStepResult(false, 3600, $"Train settlers: waiting for {type} level {nextSlotLevel} for the next expansion slot.");
+        }
+
         if (plan.SettlersToTrain == 0)
         {
             return new ExpansionStepResult(true, null, $"Train settlers: done. {plan.Reason}");
@@ -134,6 +140,12 @@ public sealed partial class TravianClient
         {
             var wait = await EstimateSettlerTrainingWaitSecondsAsync(cancellationToken);
             return new ExpansionStepResult(false, wait, $"Found village ({x}|{y}): only {settlersAtHome}/{ExpansionCalculator.SettlersPerVillage} settlers at home.");
+        }
+
+        var cultureWait = await ReadCulturePointsWaitSecondsAsync(cancellationToken);
+        if (cultureWait is int cultureSeconds)
+        {
+            return new ExpansionStepResult(false, cultureSeconds, $"Found village ({x}|{y}): not enough culture points for another village yet.");
         }
 
         var detailsPath = $"/position_details.php?x={x.ToString(CultureInfo.InvariantCulture)}&y={y.ToString(CultureInfo.InvariantCulture)}";
@@ -223,6 +235,55 @@ public sealed partial class TravianClient
 
         Notify($"[expansion] expansion tab: used={used}, free={free}.");
         return used;
+    }
+
+    /// <summary>
+    /// Seconds to wait until the account's culture points open another settlement slot, or null when a slot
+    /// is free or the culture-point tab cannot be read (the founding form then decides).
+    /// </summary>
+    private async Task<int?> ReadCulturePointsWaitSecondsAsync(CancellationToken cancellationToken)
+    {
+        var status = await ReadBuildingsStatusAsync(cancellationToken);
+        if (FindExpansionBuilding(status.Buildings) is not var (building, _))
+        {
+            Notify("[expansion] no Residence/Palace in this village; culture points not checked.");
+            return null;
+        }
+
+        await EnsurePageForReadAsync($"{Paths.BuildBySlot(building.SlotId!.Value)}&s=2", "culture points", cancellationToken);
+        var texts = await _page.EvaluateAsync<string[]?>(
+            """
+            () => {
+              const root = document.querySelector('#build #expansionSettlements');
+              if (!root) return null;
+              return [
+                root.querySelector('table.slotDetails tfoot td')?.textContent ?? '',
+                root.querySelector('.barCaption')?.textContent ?? '',
+                document.querySelector('#build table.culturePointsProductionDetails tfoot td')?.textContent ?? ''
+              ];
+            }
+            """).WaitAsync(cancellationToken);
+        if (texts is not [var slotsText, var captionText, var productionText]
+            || ExpansionCalculator.ParseSettlementSlots(slotsText) is not var (used, total))
+        {
+            Notify("[expansion] culture-point tab not readable; continuing to the founding form.");
+            return null;
+        }
+
+        if (used < total)
+        {
+            Notify($"[expansion] settlement slots used={used}/{total}; a slot is free.");
+            return null;
+        }
+
+        var progress = ExpansionCalculator.ParseCulturePointsProgress(captionText);
+        var perDay = ExpansionCalculator.ParseWholeNumber(productionText) ?? 0;
+        var seconds = progress is var (current, needed)
+            ? ExpansionCalculator.SecondsUntilCulturePoints(current, needed, perDay)
+            : null;
+        var wait = Math.Clamp(seconds ?? 3600, 300, 3600);
+        Notify($"[expansion] settlement slots used={used}/{total}; culture points {progress?.Current.ToString(CultureInfo.InvariantCulture) ?? "?"}/{progress?.Needed.ToString(CultureInfo.InvariantCulture) ?? "?"} at {perDay.ToString(CultureInfo.InvariantCulture)}/day, next slot in ~{seconds?.ToString(CultureInfo.InvariantCulture) ?? "unknown"}s; waiting {wait}s.");
+        return wait;
     }
 
     private async Task<int> EstimateSettlerTrainingWaitSecondsAsync(CancellationToken cancellationToken)
