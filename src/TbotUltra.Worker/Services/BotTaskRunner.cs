@@ -65,6 +65,8 @@ public sealed partial class BotTaskRunner
             ["check_farmlists_alliance"] = ExecuteCheckFarmlistsAllianceAsync,
             // Sends surplus resources from selected own villages to one target village.
             ["send_resources_between_villages"] = ExecuteSendResourcesBetweenVillagesAsync,
+            // Offers surplus crop of selected villages on the marketplace for the scarcest resource.
+            ["create_marketplace_crop_offers"] = ExecuteCreateMarketplaceCropOffersAsync,
             // Sends selected troops from selected own villages to one target village as reinforcements.
             ["send_reinforcements_between_villages"] = ExecuteSendReinforcementsBetweenVillagesAsync,
             // Official: collects achieved Questmaster task rewards on the /tasks page (both tabs).

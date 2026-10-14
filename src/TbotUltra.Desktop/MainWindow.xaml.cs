@@ -707,6 +707,7 @@ public partial class MainWindow : Window
         ResourceTransferTargetVillageComboBox.ItemsSource = _resourceTransferVillages;
         ResourceTransferAdditionalTargetVillagesItemsControl.ItemsSource = _resourceTransferVillages;
         ResourceTransferSourceVillagesItemsControl.ItemsSource = _resourceTransferVillages;
+        CropOfferVillagesItemsControl.ItemsSource = _resourceTransferVillages;
         ReinforcementTargetVillageComboBox.ItemsSource = _reinforcementVillages;
         ReinforcementSourceVillagesItemsControl.ItemsSource = _reinforcementSourceVillages;
         InitializeReinforcementSendSettings();

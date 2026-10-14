@@ -16,6 +16,7 @@ public sealed class ResourceTransferVillageItem : INotifyPropertyChanged
     private bool _isSource;
     private bool _isTarget;
     private bool _isAdditionalTarget;
+    private bool _isCropOfferVillage;
     private Dictionary<string, ResourceStorageForecast> _baseForecasts = new(StringComparer.OrdinalIgnoreCase);
     private DateTimeOffset? _baseForecastCapturedAtUtc;
     private string _woodPercentText = "-";
@@ -107,6 +108,22 @@ public sealed class ResourceTransferVillageItem : INotifyPropertyChanged
     }
 
     public bool CanSelectAsSource => !IsTarget && !IsAdditionalTarget;
+
+    // Independent of the transfer roles: a target village can still sell its own surplus crop.
+    public bool IsCropOfferVillage
+    {
+        get => _isCropOfferVillage;
+        set
+        {
+            if (_isCropOfferVillage == value)
+            {
+                return;
+            }
+
+            _isCropOfferVillage = value;
+            OnPropertyChanged();
+        }
+    }
 
     public bool CanSelectAsAdditionalTarget => !IsTarget;
 

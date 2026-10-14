@@ -11,6 +11,7 @@ public static class AccountConfigurationScope
         .. TroopTrainingOptionsModule.AccountScopedKeys,
         .. NpcTradeOptionsModule.AccountScopedKeys,
         .. ResourceTransferOptionsModule.AccountScopedKeys,
+        .. MarketplaceCropOfferOptionsModule.AccountScopedKeys,
         .. ReinforcementOptionsModule.AccountScopedKeys,
         .. ActionPacingOptionsModule.AccountScopedKeys,
         .. SpendingOptionsModule.AccountScopedKeys,

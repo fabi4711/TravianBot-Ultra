@@ -289,6 +289,13 @@ public static class BotOptionPayloadKeys
     public const string ResourceTransferSendIron = "resource_transfer_send_iron";
     public const string ResourceTransferSendCrop = "resource_transfer_send_crop";
 
+    public const string MarketplaceCropOfferEnabled = "marketplace_crop_offer_enabled";
+    public const string MarketplaceCropOfferVillageNames = "marketplace_crop_offer_village_names";
+    public const string MarketplaceCropOfferThresholdPercent = "marketplace_crop_offer_threshold_percent";
+    public const string MarketplaceCropOfferKeepPercent = "marketplace_crop_offer_keep_percent";
+    public const string MarketplaceCropOfferRatioPercent = "marketplace_crop_offer_ratio_percent";
+    public const string MarketplaceCropOfferMaxOpenOffers = "marketplace_crop_offer_max_open_offers";
+
     public const string ReinforcementsEnabled = "reinforcements_enabled";
     public const string ReinforcementsTargetVillageName = "reinforcements_target_village_name";
     public const string ReinforcementsSourceVillageNames = "reinforcements_source_village_names";

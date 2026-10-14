@@ -418,6 +418,7 @@ public sealed class QueueStoreAndSchedulerTests : IDisposable
                 "send_farmlists",
                 "check_farmlists_alliance",
                 "send_resources_between_villages",
+                "create_marketplace_crop_offers",
                 "send_reinforcements_between_villages",
                 "collect_tasks",
                 "collect_daily_quests",

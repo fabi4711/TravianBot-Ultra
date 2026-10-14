@@ -32,6 +32,7 @@ public partial class MainWindow
             var targetName = options.ResourceTransferTargetVillageName;
             var selectedSources = options.ResourceTransferSourceVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var selectedAdditionalTargets = options.ResourceTransferAdditionalTargetVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var cropOfferVillages = options.MarketplaceCropOfferVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
             var previousItems = _resourceTransferVillages
                 .Where(item => !string.IsNullOrWhiteSpace(item.Name))
                 .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
@@ -51,6 +52,7 @@ public partial class MainWindow
                     CoordY = village.CoordY,
                     IsSource = selectedSources.Contains(village.Name),
                     IsAdditionalTarget = selectedAdditionalTargets.Contains(village.Name),
+                    IsCropOfferVillage = cropOfferVillages.Contains(village.Name),
                 };
                 if (previousItems.TryGetValue(village.Name, out var previous))
                 {
@@ -132,6 +134,17 @@ public partial class MainWindow
             }
 
             UpdateResourceTransferTargetSourceState(persist: false);
+
+            CropOfferEnabledCheckBox.IsChecked = options.MarketplaceCropOfferEnabled;
+            SelectComboValue(CropOfferThresholdComboBox, options.MarketplaceCropOfferThresholdPercent);
+            SelectComboValue(CropOfferKeepComboBox, options.MarketplaceCropOfferKeepPercent);
+            SelectComboValue(CropOfferRatioComboBox, options.MarketplaceCropOfferRatioPercent);
+            SelectComboValue(CropOfferMaxOpenComboBox, options.MarketplaceCropOfferMaxOpenOffers);
+            var cropOfferVillages = options.MarketplaceCropOfferVillageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var village in _resourceTransferVillages)
+            {
+                village.IsCropOfferVillage = cropOfferVillages.Contains(village.Name);
+            }
         }
         finally
         {
@@ -139,6 +152,29 @@ public partial class MainWindow
         }
 
         UpdateResourceTransferStatus();
+    }
+
+    // Kept apart from PersistResourceTransferSettings so the crop offer settings never rewrite transfer keys.
+    private void PersistCropOfferSettings()
+    {
+        if (_suppressResourceTransferConfigWrite || _botConfigStore is null)
+        {
+            return;
+        }
+
+        var config = _botConfigStore.Load();
+        config[BotOptionPayloadKeys.MarketplaceCropOfferEnabled] = CropOfferEnabledCheckBox.IsChecked == true;
+        config[BotOptionPayloadKeys.MarketplaceCropOfferVillageNames] = new JsonArray(
+            _resourceTransferVillages
+                .Where(item => item.IsCropOfferVillage && !string.IsNullOrWhiteSpace(item.Name))
+                .Select(item => JsonValue.Create(item.Name)!)
+                .ToArray());
+        config[BotOptionPayloadKeys.MarketplaceCropOfferThresholdPercent] = ReadComboPercent(CropOfferThresholdComboBox, 80);
+        config[BotOptionPayloadKeys.MarketplaceCropOfferKeepPercent] = ReadComboPercent(CropOfferKeepComboBox, 50);
+        config[BotOptionPayloadKeys.MarketplaceCropOfferRatioPercent] = ReadComboPercent(CropOfferRatioComboBox, 50);
+        config[BotOptionPayloadKeys.MarketplaceCropOfferMaxOpenOffers] = ReadComboPercent(CropOfferMaxOpenComboBox, 3);
+        _botConfigStore.Save(config);
+        AppendLog($"[crop-offer] settings saved enabled={CropOfferEnabledCheckBox.IsChecked == true}.");
     }
 
     private static void SelectComboValue(ComboBox comboBox, int value)
@@ -289,6 +325,10 @@ public partial class MainWindow
         {
             PersistResourceTransferSettings();
             UpdateResourceTransferStatus();
+        }
+        else if (string.Equals(e.PropertyName, nameof(ResourceTransferVillageItem.IsCropOfferVillage), StringComparison.Ordinal))
+        {
+            PersistCropOfferSettings();
         }
     }
 

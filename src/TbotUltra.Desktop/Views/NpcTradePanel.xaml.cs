@@ -64,9 +64,17 @@ public partial class NpcTradePanel : UserControl
     internal TextBlock TransferStatus => ResourceTransferStatusTextBlock;
     internal Button TransferQueueNow => ResourceTransferQueueNowButton;
     internal Button TransferScanVillages => ResourceTransferScanVillagesButton;
+    internal CheckBox CropOfferEnabled => CropOfferEnabledCheckBox;
+    internal ItemsControl CropOfferVillages => CropOfferVillagesItemsControl;
+    internal ComboBox CropOfferThreshold => CropOfferThresholdComboBox;
+    internal ComboBox CropOfferKeep => CropOfferKeepComboBox;
+    internal ComboBox CropOfferRatio => CropOfferRatioComboBox;
+    internal ComboBox CropOfferMaxOpen => CropOfferMaxOpenComboBox;
 
     private void ResourceTransferSetting_Changed(object sender, RoutedEventArgs e) => Host?.OnResourceTransferSettingChanged(sender, e);
     private void ResourceTransferSetting_SelectionChanged(object sender, SelectionChangedEventArgs e) => Host?.OnResourceTransferSettingSelectionChanged(sender, e);
     private void QueueResourceTransferNowButton_Click(object sender, RoutedEventArgs e) => Host?.OnQueueResourceTransferNowClicked(sender, e);
     private void ResourceTransferScanVillagesButton_Click(object sender, RoutedEventArgs e) => Host?.OnResourceTransferScanVillagesClicked(sender, e);
+    private void CropOfferSetting_Changed(object sender, RoutedEventArgs e) => Host?.OnCropOfferSettingChanged();
+    private void CropOfferSetting_SelectionChanged(object sender, SelectionChangedEventArgs e) => Host?.OnCropOfferSettingChanged();
 }

@@ -17,6 +17,7 @@ public static class BotOptionsFactory
         var troopTraining = TroopTrainingOptionsModule.FromConfiguration(configuration);
         var npcTrade = NpcTradeOptionsModule.FromConfiguration(configuration);
         var resourceTransfer = ResourceTransferOptionsModule.FromConfiguration(configuration);
+        var marketplaceCropOffer = MarketplaceCropOfferOptionsModule.FromConfiguration(configuration);
         var reinforcements = ReinforcementOptionsModule.FromConfiguration(configuration);
         var spending = SpendingOptionsModule.FromConfiguration(configuration);
 
@@ -39,6 +40,7 @@ public static class BotOptionsFactory
         options = troopTraining.ApplyTo(options);
         options = npcTrade.ApplyTo(options);
         options = resourceTransfer.ApplyTo(options);
+        options = marketplaceCropOffer.ApplyTo(options);
         options = reinforcements.ApplyTo(options);
         options = actionPacing.ApplyTo(options);
         options = hero.ApplyTo(options);
