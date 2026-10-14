@@ -7,7 +7,8 @@ namespace TbotUltra.Worker.Services;
 public sealed partial class TravianClient
 {
     private const int MarketplaceSellTab = 2;
-    private const int MarketplaceCropOfferIdleSeconds = 1800;
+    // Short on purpose: a busy crop village fills its granary from the threshold in well under half an hour.
+    private const int MarketplaceCropOfferIdleSeconds = 600;
     private const string CreateOfferFormSelector = "#createOfferForm";
 
     // Travian icon classes per resource; the offer dialog uses "lumber" for wood.
