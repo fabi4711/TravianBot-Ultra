@@ -285,6 +285,36 @@ public sealed class ContinuousRuntimeItemPreparationTests
         Assert.Equal(TownHallCelebrationDefaults.Big, item.Payload[BotOptionPayloadKeys.TownHallCelebrationMode]);
     }
 
+    [Fact]
+    public async Task PendingTownHallCelebration_FollowsTheConfiguredMode()
+    {
+        var port = new InMemoryPort
+        {
+            EnabledGroups = [QueueGroup.TownHallCelebration],
+            ConsideredGroups = [QueueGroup.TownHallCelebration],
+            Villages = [new AutomationRuntimeVillage("1:2", "Alpha", null, false, 1, 2)],
+            TownHallMode = TownHallCelebrationDefaults.Big,
+        };
+        var pending = port.Queue.Enqueue(new AutomationRuntimeItemSpec(
+            "run_town_hall_celebration",
+            "Town Hall celebration",
+            new Dictionary<string, string>
+            {
+                [BotOptionPayloadKeys.TargetVillageKey] = "1:2",
+                [BotOptionPayloadKeys.TownHallCelebrationMode] = TownHallCelebrationDefaults.Small,
+            },
+            -50,
+            0,
+            "1:2"));
+
+        await new ContinuousRuntimeItemPreparation(port).PrepareAsync(new BotOptions(), default);
+
+        var item = Assert.Single(port.Queue.Items);
+        Assert.Equal(pending.Id, item.Id);
+        Assert.Equal(TownHallCelebrationDefaults.Big, item.Payload[BotOptionPayloadKeys.TownHallCelebrationMode]);
+        Assert.Equal("1:2", item.Payload[BotOptionPayloadKeys.TargetVillageKey]);
+    }
+
     private sealed class InMemoryPort : IContinuousRuntimeItemPreparationPort
     {
         public IReadOnlyList<QueueGroup> EnabledGroups { get; init; } = [];
