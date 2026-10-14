@@ -171,6 +171,7 @@ public sealed partial class TravianClient
         }
 
         var input = picker.Locator(".input.amount input").First;
+        await DelayBeforeClickAsync(cancellationToken, "focus offer amount");
         await TypeHumanlyAsync(input, amount.ToString(System.Globalization.CultureInfo.InvariantCulture), cancellationToken);
         await Task.Delay(300, cancellationToken);
         var typed = ExpansionCalculator.ParseWholeNumber(await input.InputValueAsync());
@@ -190,6 +191,7 @@ public sealed partial class TravianClient
             var cancel = _page.Locator(".createOfferDialog button.cancel").First;
             if (await cancel.CountAsync() > 0 && await cancel.IsVisibleAsync())
             {
+                await DelayBeforeClickAsync(cancellationToken, "close offer dialog");
                 await ClickLocatorAsync(cancel, "close-create-offer-dialog", cancellationToken);
             }
         }
