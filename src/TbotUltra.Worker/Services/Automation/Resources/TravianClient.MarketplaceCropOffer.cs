@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using TbotUltra.Core.Travian;
 
@@ -205,8 +206,15 @@ public sealed partial class TravianClient
         }
     }
 
+    // Playwright returned null for the nested offer list once rows existed, so the script hands back JSON text.
     private async Task<MarketplaceSellStateJs> ReadMarketplaceSellStateAsync()
-        => await _page.EvaluateAsync<MarketplaceSellStateJs>(MarketplaceSellStateScript);
+        => ParseMarketplaceSellState(await _page.EvaluateAsync<string>(MarketplaceSellStateScript));
+
+    internal static MarketplaceSellStateJs ParseMarketplaceSellState(string? json)
+    {
+        var state = string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<MarketplaceSellStateJs>(json);
+        return state is null ? new MarketplaceSellStateJs() : state with { Offers = state.Offers ?? [] };
+    }
 
     private static MarketplaceOpenOffer ToOpenOffer(MarketplaceSellOfferJs offer)
     {
@@ -235,15 +243,15 @@ public sealed partial class TravianClient
                   offeredResource: resourceOf(row.querySelector('td.offered')),
                   offeredAmount: digits(row.querySelector('td.offered span')?.textContent),
                 }));
-              return {
+              return JSON.stringify({
                 freeMerchants: available.length === 2 ? digits(available[0]) : null,
                 merchantCapacity: digits(document.querySelector('.merchantsInformation .capacity .value')?.textContent),
                 offers,
-              };
+              });
             }
             """;
 
-    private sealed class MarketplaceSellStateJs
+    internal sealed record MarketplaceSellStateJs
     {
         [JsonPropertyName("freeMerchants")]
         public int? FreeMerchants { get; init; }
@@ -255,7 +263,7 @@ public sealed partial class TravianClient
         public List<MarketplaceSellOfferJs> Offers { get; init; } = [];
     }
 
-    private sealed class MarketplaceSellOfferJs
+    internal sealed record MarketplaceSellOfferJs
     {
         [JsonPropertyName("wantedResource")]
         public string? WantedResource { get; init; }
