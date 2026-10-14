@@ -256,14 +256,19 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
     {
         foreach (var village in villages)
         {
-            if (!port.GetEnabledGroupsForVillage(village.Key).Contains(QueueGroup.TownHallCelebration)
-                || runtimeItems.HasActiveForVillage("run_town_hall_celebration", village.Key))
+            if (!port.GetEnabledGroupsForVillage(village.Key).Contains(QueueGroup.TownHallCelebration))
             {
                 continue;
             }
 
             var mode = TownHallCelebrationDefaults.NormalizeMode(
                 port.LoadTownHallMode(village.Key) ?? options.TownHallCelebrationMode);
+            if (runtimeItems.HasActiveForVillage("run_town_hall_celebration", village.Key))
+            {
+                SyncPendingTownHallMode(runtimeItems, village, mode);
+                continue;
+            }
+
             var now = DateTimeOffset.UtcNow;
             var remembered = port.LoadActiveTownHallState(village.Key, now);
             if (remembered is not null)
@@ -300,6 +305,33 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             payload[BotOptionPayloadKeys.TownHallCelebrationMode] = mode;
             runtimeItems.Ensure(new AutomationRuntimeItemSpec(
                 "run_town_hall_celebration", "Town Hall celebration", payload, -50, 0, village.Key));
+        }
+    }
+
+    // Runtime items survive restarts, so a pending celebration keeps its mode unless it follows the setting.
+    private void SyncPendingTownHallMode(
+        AutomationRuntimeItemReconciler runtimeItems,
+        AutomationRuntimeVillage village,
+        string mode)
+    {
+        var pending = runtimeItems.FindPendingForVillage("run_town_hall_celebration", village.Key);
+        var currentMode = pending?.Payload.GetValueOrDefault(BotOptionPayloadKeys.TownHallCelebrationMode);
+        if (pending is null || string.Equals(currentMode, mode, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var payload = new Dictionary<string, string>(pending.Payload)
+        {
+            [BotOptionPayloadKeys.TownHallCelebrationMode] = mode,
+        };
+        if (port.RuntimeQueue.UpdatePendingPayload(pending.Id, payload))
+        {
+            port.Log($"[town-hall] pending celebration for '{village.Name}' switched from '{currentMode}' to '{mode}'.");
+        }
+        else
+        {
+            port.Log($"[town-hall] could not switch pending celebration for '{village.Name}' to '{mode}'; it keeps '{currentMode}'.");
         }
     }
 
