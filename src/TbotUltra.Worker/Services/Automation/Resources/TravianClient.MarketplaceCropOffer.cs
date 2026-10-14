@@ -127,7 +127,7 @@ public sealed partial class TravianClient
             }
 
             var submit = _page.Locator(".createOfferDialog button.create").First;
-            if (await submit.GetAttributeAsync("class") is { } submitClass && submitClass.Contains("disabled", StringComparison.Ordinal))
+            if (HasCssClass(await submit.GetAttributeAsync("class"), "disabled"))
             {
                 Notify($"[crop-offer] '{villageName}': create button is disabled; cancelled.");
                 return false;
@@ -158,13 +158,13 @@ public sealed partial class TravianClient
     {
         var resourceClass = MarketplaceResourceClasses[resource];
         var toggle = picker.Locator($".resource.{resourceClass} button.selectResource").First;
-        if (!(await toggle.GetAttributeAsync("class") ?? string.Empty).Contains("active", StringComparison.Ordinal))
+        if (!HasCssClass(await toggle.GetAttributeAsync("class"), "active"))
         {
             await DelayBeforeClickAsync(cancellationToken);
             await ClickLocatorAsync(toggle, $"select-offer-{resourceClass}", cancellationToken);
         }
 
-        if (!(await toggle.GetAttributeAsync("class") ?? string.Empty).Contains("active", StringComparison.Ordinal))
+        if (!HasCssClass(await toggle.GetAttributeAsync("class"), "active"))
         {
             Notify($"[crop-offer] resource toggle '{resourceClass}' did not become active.");
             return false;
@@ -183,6 +183,10 @@ public sealed partial class TravianClient
 
         return true;
     }
+
+    // Every resource toggle carries "activeNotClickable", so a substring check for "active" always matches.
+    internal static bool HasCssClass(string? classes, string name)
+        => (classes ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(name, StringComparer.Ordinal);
 
     private async Task CloseCreateOfferDialogAsync(CancellationToken cancellationToken)
     {
