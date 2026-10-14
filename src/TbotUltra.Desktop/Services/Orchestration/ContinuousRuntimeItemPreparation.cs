@@ -123,6 +123,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             cancellationToken);
         PrepareFarmListAllianceCheckItem(runtimeItems, villages, consideredGroups, queueItems, onlyVillage?.Key);
         PrepareResourceTransferItem(runtimeItems, enabledGroups, options, onlyVillage?.Key);
+        PrepareMarketplaceCropOfferItem(runtimeItems, enabledGroups, options, onlyVillage?.Key);
         PrepareReinforcementItem(runtimeItems, enabledGroups, queueItems, options, onlyVillage?.Key);
     }
 
@@ -509,6 +510,25 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             AdditionalTargetVillageNames: options.ResourceTransferAdditionalTargetVillageNames).ToDictionary();
         runtimeItems.Ensure(new AutomationRuntimeItemSpec(
             "send_resources_between_villages", "Resource transfer", payload, -50, 0));
+    }
+
+    private static void PrepareMarketplaceCropOfferItem(
+        AutomationRuntimeItemReconciler runtimeItems,
+        IReadOnlyList<QueueGroup> enabledGroups,
+        BotOptions options,
+        string? onlyVillageKey)
+    {
+        if (onlyVillageKey is not null
+            || !options.MarketplaceCropOfferEnabled
+            || options.MarketplaceCropOfferVillageNames.Count == 0
+            || !enabledGroups.Contains(QueueGroup.ResourceTransfer)
+            || runtimeItems.HasActive("create_marketplace_crop_offers"))
+        {
+            return;
+        }
+
+        runtimeItems.Ensure(new AutomationRuntimeItemSpec(
+            "create_marketplace_crop_offers", "Crop offers", null, -50, 0));
     }
 
     private void PrepareReinforcementItem(

@@ -409,6 +409,24 @@ public sealed record BotOptions
     [ConfigurationKeyName(BotOptionPayloadKeys.ResourceTransferSendCrop)]
     public bool ResourceTransferSendCrop { get; init; } = true;
 
+    [ConfigurationKeyName(BotOptionPayloadKeys.MarketplaceCropOfferEnabled)]
+    public bool MarketplaceCropOfferEnabled { get; init; }
+
+    [ConfigurationKeyName(BotOptionPayloadKeys.MarketplaceCropOfferVillageNames)]
+    public List<string> MarketplaceCropOfferVillageNames { get; init; } = [];
+
+    [ConfigurationKeyName(BotOptionPayloadKeys.MarketplaceCropOfferThresholdPercent)]
+    public int MarketplaceCropOfferThresholdPercent { get; init; } = 80;
+
+    [ConfigurationKeyName(BotOptionPayloadKeys.MarketplaceCropOfferKeepPercent)]
+    public int MarketplaceCropOfferKeepPercent { get; init; } = 50;
+
+    [ConfigurationKeyName(BotOptionPayloadKeys.MarketplaceCropOfferRatioPercent)]
+    public int MarketplaceCropOfferRatioPercent { get; init; } = 50;
+
+    [ConfigurationKeyName(BotOptionPayloadKeys.MarketplaceCropOfferMaxOpenOffers)]
+    public int MarketplaceCropOfferMaxOpenOffers { get; init; } = 3;
+
     [ConfigurationKeyName(BotOptionPayloadKeys.ReinforcementsEnabled)]
     public bool ReinforcementsEnabled { get; init; }
 

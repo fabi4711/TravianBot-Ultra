@@ -27,6 +27,7 @@ public static class TaskCatalog
         new("send_farmlists", TaskGroup.Farming, "Send farmlists", true, TaskPayloadKind.Farming),
         new("check_farmlists_alliance", TaskGroup.Farming, "Check farmlists against own alliance", true, TaskPayloadKind.None),
         new("send_resources_between_villages", TaskGroup.ResourceTransfer, "Send resources between villages", true, TaskPayloadKind.ResourceTransfer),
+        new("create_marketplace_crop_offers", TaskGroup.ResourceTransfer, "Offer surplus crop on the marketplace", true, TaskPayloadKind.None),
         new("send_reinforcements_between_villages", TaskGroup.Reinforcements, "Send reinforcements between villages", true, TaskPayloadKind.Reinforcements),
         new("collect_tasks", TaskGroup.Account, "Collect tasks", true, TaskPayloadKind.None),
         new("collect_daily_quests", TaskGroup.Account, "Collect daily quests", true, TaskPayloadKind.None),

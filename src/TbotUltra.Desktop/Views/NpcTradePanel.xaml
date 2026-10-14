@@ -631,6 +631,106 @@
                             Margin="8,0,0,0"
                             Click="ResourceTransferScanVillagesButton_Click" />
                 </StackPanel>
+                <CheckBox x:Name="CropOfferEnabledCheckBox"
+                          Content="Offer surplus crop on the marketplace"
+                          Margin="0,16,0,6"
+                          ToolTip="Selected villages offer full merchant loads of crop for the scarcest of wood, clay and iron. Runs with the Resource transfer loop group."
+                          Checked="CropOfferSetting_Changed"
+                          Unchecked="CropOfferSetting_Changed" />
+                <Border BorderBrush="{DynamicResource BorderSubtleBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="8"
+                        MaxHeight="150"
+                        Margin="0,0,0,10">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="CropOfferVillagesItemsControl">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <CheckBox Margin="0,0,0,5"
+                                              IsChecked="{Binding IsCropOfferVillage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                                        <TextBlock Text="{Binding DisplayName}" />
+                                    </CheckBox>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                        <TextBlock Text="Offer above"
+                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                   FontSize="12"
+                                   Margin="0,0,0,4"
+                                   ToolTip="Granary percent required before crop is offered." />
+                        <ComboBox x:Name="CropOfferThresholdComboBox"
+                                  SelectedValuePath="Tag"
+                                  SelectionChanged="CropOfferSetting_SelectionChanged">
+                            <ComboBoxItem Content="50%" Tag="50" />
+                            <ComboBoxItem Content="60%" Tag="60" />
+                            <ComboBoxItem Content="70%" Tag="70" />
+                            <ComboBoxItem Content="80%" Tag="80" />
+                            <ComboBoxItem Content="90%" Tag="90" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="0,0,8,0">
+                        <TextBlock Text="Keep"
+                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                   FontSize="12"
+                                   Margin="0,0,0,4"
+                                   ToolTip="Granary percent that is never offered." />
+                        <ComboBox x:Name="CropOfferKeepComboBox"
+                                  SelectedValuePath="Tag"
+                                  SelectionChanged="CropOfferSetting_SelectionChanged">
+                            <ComboBoxItem Content="20%" Tag="20" />
+                            <ComboBoxItem Content="30%" Tag="30" />
+                            <ComboBoxItem Content="40%" Tag="40" />
+                            <ComboBoxItem Content="50%" Tag="50" />
+                            <ComboBoxItem Content="60%" Tag="60" />
+                            <ComboBoxItem Content="70%" Tag="70" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Margin="0,0,8,0">
+                        <TextBlock Text="Ask for"
+                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                   FontSize="12"
+                                   Margin="0,0,0,4"
+                                   ToolTip="Wanted amount per offered crop. 1:2 asks 5,000 for 10,000 crop." />
+                        <ComboBox x:Name="CropOfferRatioComboBox"
+                                  SelectedValuePath="Tag"
+                                  SelectionChanged="CropOfferSetting_SelectionChanged">
+                            <ComboBoxItem Content="1:2" Tag="50" />
+                            <ComboBoxItem Content="2:3" Tag="67" />
+                            <ComboBoxItem Content="3:4" Tag="75" />
+                            <ComboBoxItem Content="1:1" Tag="100" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="3">
+                        <TextBlock Text="Max open offers"
+                                   Foreground="{DynamicResource TextSubtleBrush}"
+                                   FontSize="12"
+                                   Margin="0,0,0,4"
+                                   ToolTip="Open offers per village, including offers created by hand." />
+                        <ComboBox x:Name="CropOfferMaxOpenComboBox"
+                                  SelectedValuePath="Tag"
+                                  SelectionChanged="CropOfferSetting_SelectionChanged">
+                            <ComboBoxItem Content="1" Tag="1" />
+                            <ComboBoxItem Content="2" Tag="2" />
+                            <ComboBoxItem Content="3" Tag="3" />
+                            <ComboBoxItem Content="4" Tag="4" />
+                            <ComboBoxItem Content="5" Tag="5" />
+                            <ComboBoxItem Content="6" Tag="6" />
+                            <ComboBoxItem Content="8" Tag="8" />
+                            <ComboBoxItem Content="10" Tag="10" />
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
             </StackPanel>
         </Border>
 
