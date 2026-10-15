@@ -115,6 +115,8 @@ public partial class MainWindow
             MainWindow.HasEnabledTroopTrainingBuilding(options);
         public bool ShouldGateTroopTrainingOnActiveQueue(BotOptions options) =>
             MainWindow.ShouldGateTroopTrainingEnqueueOnActiveQueue(options);
+        public bool IsPreSleepTroopFillWindow => owner.IsPreSleepTroopFillWindow();
+        public bool TryClaimPreSleepTroopFill(string villageKey) => owner.TryClaimPreSleepTroopFill(villageKey);
         public int? ResolveActiveTroopTrainingQueueWaitSeconds(
             AutomationRuntimeVillage village,
             BotOptions options) => owner.ResolveActiveTroopTrainingQueueWaitSeconds(

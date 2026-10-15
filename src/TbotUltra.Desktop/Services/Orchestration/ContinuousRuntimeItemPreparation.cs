@@ -39,6 +39,8 @@ internal interface IContinuousRuntimeItemPreparationPort
     bool HasEnabledTroopTrainingBuilding(BotOptions options);
     bool ShouldGateTroopTrainingOnActiveQueue(BotOptions options);
     int? ResolveActiveTroopTrainingQueueWaitSeconds(AutomationRuntimeVillage village, BotOptions options);
+    bool IsPreSleepTroopFillWindow { get; }
+    bool TryClaimPreSleepTroopFill(string villageKey);
     bool IsBreweryCelebrationAvailable { get; }
     string? LoadTownHallMode(string villageKey);
     TownHallCelebrationState? LoadActiveTownHallState(string villageKey, DateTimeOffset now);
@@ -182,6 +184,12 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
                 }
             }
 
+            var preSleepFill = port.IsPreSleepTroopFillWindow;
+            if (preSleepFill)
+            {
+                ApplyPreSleepTroopFill(trainingPayload);
+            }
+
             if (runtimeItems.HasActiveForVillage("build_troops", village.Key))
             {
                 var refresh = runtimeItems.Ensure(new AutomationRuntimeItemSpec(
@@ -194,6 +202,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
                         $"[troops] refreshed deferred build_troops payload for '{village.Name}' "
                         + "with updated troop settings.");
                 }
+                PullForwardForPreSleepFill(runtimeItems, village, preSleepFill);
                 continue;
             }
 
@@ -212,7 +221,7 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             var activeQueueWaitSeconds = port.ShouldGateTroopTrainingOnActiveQueue(trainingOptions)
                 ? port.ResolveActiveTroopTrainingQueueWaitSeconds(village, trainingOptions)
                 : null;
-            if (activeQueueWaitSeconds is > 0)
+            if (activeQueueWaitSeconds is > 0 && !preSleepFill)
             {
                 port.LogVerbose(
                     $"[troops:verbose] skipped build_troops enqueue for '{village.Name}' — "
@@ -223,7 +232,44 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
 
             runtimeItems.Ensure(new AutomationRuntimeItemSpec(
                 "build_troops", "Build troops", trainingPayload, -50, 0, village.Key));
+            PullForwardForPreSleepFill(runtimeItems, village, preSleepFill);
         }
+    }
+
+    private static void ApplyPreSleepTroopFill(Dictionary<string, string> payload)
+    {
+        foreach (var (maxQueue, amountMode, runMode, minimumEnabled) in new[]
+        {
+            (BotOptionPayloadKeys.TroopTrainingBarracksMaxQueueHours, BotOptionPayloadKeys.TroopTrainingBarracksAmountMode,
+                BotOptionPayloadKeys.TroopTrainingBarracksRunMode, BotOptionPayloadKeys.TroopTrainingBarracksMinimumTroopsEnabled),
+            (BotOptionPayloadKeys.TroopTrainingStableMaxQueueHours, BotOptionPayloadKeys.TroopTrainingStableAmountMode,
+                BotOptionPayloadKeys.TroopTrainingStableRunMode, BotOptionPayloadKeys.TroopTrainingStableMinimumTroopsEnabled),
+            (BotOptionPayloadKeys.TroopTrainingWorkshopMaxQueueHours, BotOptionPayloadKeys.TroopTrainingWorkshopAmountMode,
+                BotOptionPayloadKeys.TroopTrainingWorkshopRunMode, BotOptionPayloadKeys.TroopTrainingWorkshopMinimumTroopsEnabled),
+        })
+        {
+            payload[maxQueue] = "no_limit";
+            payload[amountMode] = "maximum";
+            payload[runMode] = "timed";
+            payload[minimumEnabled] = "false";
+        }
+    }
+
+    private void PullForwardForPreSleepFill(
+        AutomationRuntimeItemReconciler runtimeItems,
+        AutomationRuntimeVillage village,
+        bool preSleepFill)
+    {
+        if (!preSleepFill
+            || runtimeItems.FindPendingForVillage("build_troops", village.Key) is not { } pending
+            || !port.TryClaimPreSleepTroopFill(village.Key))
+        {
+            return;
+        }
+
+        port.Log(port.DeferPendingItem(pending.Id, null, TimeSpan.Zero)
+            ? $"[pre-sleep-fill] troop training for '{village.Name}' runs now without keep or queue limits."
+            : $"[pre-sleep-fill] could not pull troop training forward for '{village.Name}'.");
     }
 
     private void PrepareBreweryItem(

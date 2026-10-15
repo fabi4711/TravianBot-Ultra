@@ -29,6 +29,29 @@ public sealed class ContinuousRuntimeItemPreparationTests
     }
 
     [Fact]
+    public async Task PreSleepTroopFill_LiftsLimitsAndPullsTheItemForwardOnce()
+    {
+        var port = new InMemoryPort
+        {
+            EnabledGroups = [QueueGroup.TroopTraining],
+            ConsideredGroups = [QueueGroup.TroopTraining],
+            Villages = [new AutomationRuntimeVillage("1:2", "Alpha", "/dorf1.php?newdid=1", false, 1, 2)],
+            IsPreSleepTroopFillWindow = true,
+        };
+        var preparation = new ContinuousRuntimeItemPreparation(port);
+        var options = new BotOptions { TroopTrainingBarracksEnabled = true };
+
+        await preparation.PrepareAsync(options, default);
+        await preparation.PrepareAsync(options, default);
+
+        var item = Assert.Single(port.Queue.Items);
+        Assert.Equal("maximum", item.Payload[BotOptionPayloadKeys.TroopTrainingBarracksAmountMode]);
+        Assert.Equal("no_limit", item.Payload[BotOptionPayloadKeys.TroopTrainingBarracksMaxQueueHours]);
+        Assert.Equal("false", item.Payload[BotOptionPayloadKeys.TroopTrainingBarracksMinimumTroopsEnabled]);
+        Assert.Equal([(item.Id, TimeSpan.Zero)], port.DeferredItems);
+    }
+
+    [Fact]
     public async Task VillageScopedPreparation_DoesNotGenerateAccountGlobalTransferItem()
     {
         var port = new InMemoryPort
@@ -366,13 +389,27 @@ public sealed class ContinuousRuntimeItemPreparationTests
         public bool HasEnabledTroopTrainingBuilding(BotOptions options) =>
             options.TroopTrainingBarracksEnabled;
         public bool ShouldGateTroopTrainingOnActiveQueue(BotOptions options) => false;
+        public bool IsPreSleepTroopFillWindow { get; set; }
+        public List<string> PreSleepTroopFillClaims { get; } = [];
+        public bool TryClaimPreSleepTroopFill(string villageKey)
+        {
+            if (PreSleepTroopFillClaims.Contains(villageKey))
+                return false;
+            PreSleepTroopFillClaims.Add(villageKey);
+            return true;
+        }
         public int? ResolveActiveTroopTrainingQueueWaitSeconds(
             AutomationRuntimeVillage village,
             BotOptions options) => null;
         public string? LoadTownHallMode(string villageKey) => TownHallMode;
         public TownHallCelebrationState? LoadActiveTownHallState(string villageKey, DateTimeOffset now) =>
             ActiveTownHallState;
-        public bool DeferPendingItem(Guid itemId, Dictionary<string, string>? payload, TimeSpan delay) => true;
+        public List<(Guid ItemId, TimeSpan Delay)> DeferredItems { get; } = [];
+        public bool DeferPendingItem(Guid itemId, Dictionary<string, string>? payload, TimeSpan delay)
+        {
+            DeferredItems.Add((itemId, delay));
+            return true;
+        }
         public ValueTask<bool> ResolveGoldClubStatusAsync(
             BotOptions options,
             CancellationToken cancellationToken) => ValueTask.FromResult(GoldClubEnabled);

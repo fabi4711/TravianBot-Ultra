@@ -118,4 +118,8 @@ public static class PacingDefaults
     public const int PreSleepFillWindowMaxMinutes = 45;
     public const int PreSleepFillMarginMinutes = 2;
     public const int PreSleepFillSleepHoldMaxMinutes = 3;
+
+    // Before a schedule or daily-limit sleep, troop training runs once per village with keep, queue
+    // limit and minimum gates lifted, so the stock is spent instead of waiting in storage overnight.
+    public const int PreSleepTroopFillWindowMinutes = 15;
 }
