@@ -889,7 +889,8 @@ public sealed partial class TravianClient : IBuildingClient
     private async Task OpenConstructSlotPageAsync(int slotId, int? categoryIndex, CancellationToken cancellationToken)
     {
         await OpenSlotFromOverviewAsync(slotId, cancellationToken);
-        if (categoryIndex is not int category || slotId == 40)
+        // Rally Point (39) and wall (40) slots only offer their own building, so the page has no category tabs.
+        if (categoryIndex is not int category || slotId is 39 or 40)
         {
             return;
         }
