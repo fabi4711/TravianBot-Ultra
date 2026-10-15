@@ -20,7 +20,6 @@ internal sealed record AutomationFarmListSelection(
 
 internal interface IContinuousRuntimeItemPreparationPort
 {
-    IReadOnlyList<QueueGroup> GetEnabledGroups();
     IReadOnlyList<QueueGroup> GetConsideredGroups();
     IReadOnlySet<QueueGroup> GetEnabledGroupsForVillage(string villageKey);
     bool ShouldKeepHeroAdventurePolling();
@@ -77,7 +76,6 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
         AutomationRuntimeVillage? onlyVillage = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var enabledGroups = port.GetEnabledGroups();
         var consideredGroups = port.GetConsideredGroups();
         var heroPollingEnabled = consideredGroups.Contains(QueueGroup.Hero)
             || port.ShouldKeepHeroAdventurePolling();
@@ -124,9 +122,10 @@ internal sealed class ContinuousRuntimeItemPreparation(IContinuousRuntimeItemPre
             onlyVillage?.Key,
             cancellationToken);
         PrepareFarmListAllianceCheckItem(runtimeItems, villages, consideredGroups, queueItems, onlyVillage?.Key);
-        PrepareResourceTransferItem(runtimeItems, enabledGroups, options, onlyVillage?.Key);
-        PrepareMarketplaceCropOfferItem(runtimeItems, enabledGroups, options, onlyVillage?.Key);
-        PrepareReinforcementItem(runtimeItems, enabledGroups, queueItems, options, onlyVillage?.Key);
+        // Account-wide items run when any village has their group on, not only the village selected in the UI.
+        PrepareResourceTransferItem(runtimeItems, consideredGroups, options, onlyVillage?.Key);
+        PrepareMarketplaceCropOfferItem(runtimeItems, consideredGroups, options, onlyVillage?.Key);
+        PrepareReinforcementItem(runtimeItems, consideredGroups, queueItems, options, onlyVillage?.Key);
     }
 
     private void PrepareSmithyItems(

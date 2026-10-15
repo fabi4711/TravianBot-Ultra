@@ -29,8 +29,6 @@ public partial class MainWindow
                 FarmingBlockedReasonNoFarmLists,
                 StringComparison.OrdinalIgnoreCase);
 
-        public IReadOnlyList<QueueGroup> GetEnabledGroups() =>
-            owner.GetContinuousLoopEnabledGroupsInOrder();
         public IReadOnlyList<QueueGroup> GetConsideredGroups() =>
             owner.GetContinuousLoopConsideredGroupsInOrder();
         public IReadOnlySet<QueueGroup> GetEnabledGroupsForVillage(string villageKey) =>
