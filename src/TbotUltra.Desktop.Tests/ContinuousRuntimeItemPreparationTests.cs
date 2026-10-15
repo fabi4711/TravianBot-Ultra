@@ -71,6 +71,22 @@ public sealed class ContinuousRuntimeItemPreparationTests
     }
 
     [Fact]
+    public async Task ResourceTransfer_IsGeneratedWhenOnlyAnotherVillageHasItEnabled()
+    {
+        var port = new InMemoryPort
+        {
+            EnabledGroups = [QueueGroup.Construction],
+            ConsideredGroups = [QueueGroup.Construction, QueueGroup.ResourceTransfer],
+            Villages = [new AutomationRuntimeVillage("1:2", "Alpha", null, false, 1, 2)],
+            ResourceTransferReady = true,
+        };
+
+        await new ContinuousRuntimeItemPreparation(port).PrepareAsync(new BotOptions(), default);
+
+        Assert.Contains(port.Queue.Items, item => item.TaskName == "send_resources_between_villages");
+    }
+
+    [Fact]
     public async Task HeroAdventureObservation_GeneratesHeroRuntimeItem()
     {
         var port = new InMemoryPort
@@ -356,7 +372,6 @@ public sealed class ContinuousRuntimeItemPreparationTests
         public IAutomationRuntimeQueuePort RuntimeQueue => Queue;
         public bool IsBreweryCelebrationAvailable => false;
         public bool FarmingBlockedForOtherReason => false;
-        public IReadOnlyList<QueueGroup> GetEnabledGroups() => EnabledGroups;
         public IReadOnlyList<QueueGroup> GetConsideredGroups() => ConsideredGroups;
         public IReadOnlySet<QueueGroup> GetEnabledGroupsForVillage(string villageKey) =>
             EnabledGroups.ToHashSet();
