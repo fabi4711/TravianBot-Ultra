@@ -17,6 +17,8 @@ namespace TbotUltra.Desktop;
 public partial class MainWindow
 {
     private DateTimeOffset _lastPreSleepFillCheckUtc = DateTimeOffset.MinValue;
+    private readonly HashSet<string> _preSleepTroopFillClaims = new(StringComparer.OrdinalIgnoreCase);
+    private DateTimeOffset? _preSleepTroopFillSleepAt;
     private static readonly TimeSpan PreSleepFillCheckInterval = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan PreSleepFillDispatchTimeout = TimeSpan.FromSeconds(30);
 
@@ -124,6 +126,31 @@ public partial class MainWindow
                 $"window {windowMinutes}m for {villageCount} village(s)).");
             RequestQueueUiRefresh(item.Id);
         }
+    }
+
+    private bool IsPreSleepTroopFillWindow()
+        => !IsFreezeActive
+            && _sessionPacer.IsNextSleepRestricted
+            && _sessionPacer.TimeUntilSleep is { } untilSleep
+            && untilSleep <= TimeSpan.FromMinutes(PacingDefaults.PreSleepTroopFillWindowMinutes);
+
+    // One pull-forward per village and planned sleep; the claims reset when a new sleep is planned.
+    private bool TryClaimPreSleepTroopFill(string villageKey)
+    {
+        if (_sessionPacer.TimeUntilSleep is not { } untilSleep)
+        {
+            return false;
+        }
+
+        var sleepAt = DateTimeOffset.UtcNow + untilSleep;
+        if (_preSleepTroopFillSleepAt is not { } claimedSleepAt
+            || Math.Abs((sleepAt - claimedSleepAt).TotalMinutes) > 5)
+        {
+            _preSleepTroopFillClaims.Clear();
+            _preSleepTroopFillSleepAt = sleepAt;
+        }
+
+        return _preSleepTroopFillClaims.Add(villageKey);
     }
 
     // A construction item that becomes naturally due inside the pre-sleep runway must carry the

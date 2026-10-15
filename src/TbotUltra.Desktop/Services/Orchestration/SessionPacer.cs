@@ -118,6 +118,13 @@ public sealed class SessionPacer
         && SleepReason is SessionSleepReason.SessionPacing or SessionSleepReason.SmartSleep or SessionSleepReason.Manual or SessionSleepReason.Schedule;
     public TimeSpan? TimeUntilSleep => _runDeadline is null ? null : Positive(_runDeadline.Value - _now());
     public TimeSpan? TimeUntilWake => _wakeAt is null ? null : Positive(_wakeAt.Value - _now());
+
+    // True when the planned sleep comes from the allowed-hours schedule or the daily runtime limit,
+    // which are the long sleeps; random session and smart sleeps end well before that.
+    public bool IsNextSleepRestricted => Phase == SessionPacerPhase.Running
+        && _runDeadline is { } deadline
+        && GetNextRestrictionAt(_now()) is { } restrictionAt
+        && restrictionAt <= deadline.AddMinutes(1);
     public TimeSpan? ActiveRunDuration => _activeRunDuration;
     public TimeSpan? ActiveSleepDuration => _activeSleepDuration;
     public DateTimeOffset? PlannedWakeAt => _wakeAt;
