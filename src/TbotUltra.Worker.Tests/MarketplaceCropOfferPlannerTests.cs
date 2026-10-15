@@ -81,4 +81,24 @@ public sealed class MarketplaceCropOfferPlannerTests
     {
         Assert.Equal(expected, TbotUltra.Worker.Services.TravianClient.HasCssClass(classes, "active"));
     }
+
+    [Fact]
+    public void ParseMarketplaceSellState_ReadsTheOfferRows()
+    {
+        var state = TbotUltra.Worker.Services.TravianClient.ParseMarketplaceSellState(
+            """{"freeMerchants":9,"merchantCapacity":10000,"offers":[{"wantedResource":"clay","wantedAmount":5000,"offeredResource":"crop","offeredAmount":10000}]}""");
+
+        Assert.Equal(9, state.FreeMerchants);
+        Assert.Equal(10000, state.MerchantCapacity);
+        var offer = Assert.Single(state.Offers);
+        Assert.Equal(("clay", 5000L, "crop", 10000L), (offer.WantedResource, offer.WantedAmount, offer.OfferedResource, offer.OfferedAmount));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("""{"freeMerchants":null,"merchantCapacity":null,"offers":null}""")]
+    public void ParseMarketplaceSellState_NeverReturnsANullOfferList(string? json)
+    {
+        Assert.Empty(TbotUltra.Worker.Services.TravianClient.ParseMarketplaceSellState(json).Offers);
+    }
 }
