@@ -90,25 +90,25 @@ public sealed class DesktopHost : IHostedService
         }
 
         var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        await Dispatcher.Main.InvokeAsync(() =>
-        {
-            window.Closed += (_, _) => closed.TrySetResult();
-            HeadlessDialogs.IsAttended = static () => false;
-            foreach (var dialog in HeadlessWindows.Open.Where(open => !ReferenceEquals(open, window)).Reverse())
-            {
-                // Like the user cancelling it; only a dialog that refuses to close is torn down.
-                dialog.Close();
-                if (!dialog.IsClosed)
-                {
-                    dialog.HeadlessForceClose();
-                }
-            }
-        }).Task.WaitAsync(cancellationToken);
-
-        // Close from a fresh dispatcher turn, after the modal frames above have unwound.
-        _ = Dispatcher.Main.InvokeAsync(window.Close);
         try
         {
+            await Dispatcher.Main.InvokeAsync(() =>
+            {
+                window.Closed += (_, _) => closed.TrySetResult();
+                HeadlessDialogs.IsAttended = static () => false;
+                foreach (var dialog in HeadlessWindows.Open.Where(open => !ReferenceEquals(open, window)).Reverse())
+                {
+                    // Like the user cancelling it; only a dialog that refuses to close is torn down.
+                    dialog.Close();
+                    if (!dialog.IsClosed)
+                    {
+                        dialog.HeadlessForceClose();
+                    }
+                }
+            }).Task.WaitAsync(cancellationToken);
+
+            // Close from a fresh dispatcher turn, after the modal frames above have unwound.
+            _ = Dispatcher.Main.InvokeAsync(window.Close);
             await closed.Task.WaitAsync(TimeSpan.FromSeconds(25), cancellationToken);
             _logger.LogInformation("Desktop app shut down cleanly.");
         }
