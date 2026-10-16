@@ -30,6 +30,7 @@ public sealed class ResourceRefreshCancellationSourceTests
             "private async Task RefreshInboxIndicatorsQuickAsync()");
         Assert.Contains("!IsContinuousLoopRunning() && !_autoQueueRunning", inboxMethod, StringComparison.Ordinal);
         Assert.Contains("_loopController.AcquireSessionScopeToken()", inboxMethod, StringComparison.Ordinal);
+        Assert.Contains("catch (OperationCanceledException) when (sessionToken.IsCancellationRequested)", inboxMethod, StringComparison.Ordinal);
 
         var antiStarveSource = File.ReadAllText(Path.Combine(
             root,
