@@ -41,7 +41,7 @@ else
 app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
 app.UseDefaultFiles();
 app.UseStaticFiles();
-app.Map("/ws", async (HttpContext context, UiHub hub) =>
+app.Map("/ws", async (HttpContext context, UiHub hub, IHostApplicationLifetime lifetime) =>
 {
     if (!context.WebSockets.IsWebSocketRequest)
     {
@@ -50,7 +50,10 @@ app.Map("/ws", async (HttpContext context, UiHub hub) =>
     }
 
     using var socket = await context.WebSockets.AcceptWebSocketAsync();
-    await hub.AcceptAsync(socket, context.RequestAborted);
+    // Kestrel stops before the desktop app and waits for open requests; an open UI tab would otherwise
+    // hold the whole shutdown until the host timeout and the desktop app never gets to save its state.
+    using var connection = CancellationTokenSource.CreateLinkedTokenSource(context.RequestAborted, lifetime.ApplicationStopping);
+    await hub.AcceptAsync(socket, connection.Token);
 });
 app.MapGet("/health", () => Results.Ok("ok"));
 
