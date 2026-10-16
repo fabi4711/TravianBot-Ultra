@@ -2,6 +2,27 @@ Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 
 projectDir = fso.GetParentFolderName(WScript.ScriptFullName)
+progressScriptPath = projectDir & "\scripts\Show-DevLaunchProgress.ps1"
+If Not fso.FileExists(progressScriptPath) Then
+    MsgBox "Launch progress script is missing: " & progressScriptPath, vbCritical, "Tbot Ultra"
+    WScript.Quit 1
+End If
+progressStatusPath = shell.ExpandEnvironmentStrings("%TEMP%") & "\" & fso.GetTempName
+progressReadyPath = progressStatusPath & ".ready"
+WriteLaunchStatus progressStatusPath, 4, "Checking launcher requirements..."
+progressCommand = "powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & progressScriptPath & """ -StatusPath """ & progressStatusPath & """ -ReadyPath """ & progressReadyPath & """"
+shell.Run progressCommand, 0, False
+For progressWait = 1 To 80
+    If fso.FileExists(progressReadyPath) Then
+        Exit For
+    End If
+    WScript.Sleep 50
+Next
+If Not fso.FileExists(progressReadyPath) Then
+    WriteLaunchStatus progressStatusPath, -1, "Progress window could not be opened."
+    MsgBox "The launch progress window could not be opened. The app was not started.", vbCritical, "Tbot Ultra"
+    WScript.Quit 1
+End If
 dotnetExe = ResolveDotnetExe(shell, fso)
 projectPath = projectDir & "\src\TbotUltra.Desktop\TbotUltra.Desktop.csproj"
 devOutputDir = projectDir & "\temp_build_out\dev-app"
@@ -9,6 +30,7 @@ exePath = devOutputDir & "\TbotUltra.Desktop.exe"
 sourceStampPath = devOutputDir & "\.source-stamp"
 checkStampPath = devOutputDir & "\.ci-check-stamp"
 checkLogPath = devOutputDir & "\preflight.log"
+debugBuildLogPath = devOutputDir & "\dev-build.log"
 checkScriptPath = projectDir & "\scripts\Verify-DevLaunch.ps1"
 srcDesktop = projectDir & "\src\TbotUltra.Desktop"
 srcWorker = projectDir & "\src\TbotUltra.Worker"
@@ -18,11 +40,12 @@ srcWorkerTests = projectDir & "\src\TbotUltra.Worker.Tests"
 needsBuild = False
 
 If Len(dotnetExe) = 0 Then
-    MsgBox ".NET SDK is missing. Install .NET 8 SDK first.", vbExclamation, "Tbot Ultra"
+    WriteLaunchFailure progressStatusPath, ".NET SDK is missing.", "Install the .NET 8 SDK before starting Tbot Ultra.", ""
 ElseIf Not fso.FileExists(projectPath) Then
-    MsgBox "Desktop project file is missing: " & projectPath, vbExclamation, "Tbot Ultra"
+    WriteLaunchFailure progressStatusPath, "Desktop project is missing.", projectPath, ""
 Else
     shell.CurrentDirectory = projectDir
+    WriteLaunchStatus progressStatusPath, 7, "Checking changed source files..."
 
     latestSource = #1/1/2000#
     UpdateLatestModified srcDesktop, latestSource
@@ -39,6 +62,9 @@ Else
             latestCheckSource = fso.GetFile(checkScriptPath).DateLastModified
         End If
     End If
+    If fso.GetFile(progressScriptPath).DateLastModified > latestCheckSource Then
+        latestCheckSource = fso.GetFile(progressScriptPath).DateLastModified
+    End If
 
     If Not fso.FileExists(exePath) Then
         needsBuild = True
@@ -47,43 +73,75 @@ Else
     End If
 
     If Not fso.FileExists(checkScriptPath) Then
-        MsgBox "Preflight script is missing: " & checkScriptPath & ". The app was not started.", vbCritical, "Tbot Ultra - Preflight failed"
+        WriteLaunchFailure progressStatusPath, "Preflight script is missing.", checkScriptPath, ""
         WScript.Quit 1
     End If
 
     If latestCheckSource > ReadBuildStamp(fso, checkStampPath) Then
-        checkCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & checkLogPath & """"
+        checkCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & checkLogPath & """ -StatusPath """ & progressStatusPath & """"
         checkExitCode = shell.Run(checkCommand, 0, True)
         If checkExitCode <> 0 Then
-            MsgBox "Local CI check failed. The app was not started." & vbCrLf & _
-                ReadPreflightFailure(fso, checkLogPath) & vbCrLf & vbCrLf & _
-                "Full log: " & checkLogPath, vbCritical, "Tbot Ultra - Preflight failed"
+            WriteLaunchFailure progressStatusPath, "Build or tests failed. The app was not started.", _
+                ReadPreflightFailure(fso, checkLogPath), checkLogPath
             WScript.Quit checkExitCode
         End If
         WriteBuildStamp fso, checkStampPath, latestCheckSource
+    Else
+        WriteLaunchStatus progressStatusPath, 82, "Build and tests are already up to date."
     End If
 
     If IsAppRunning(shell) Then
         If Not shell.AppActivate("Tbot Ultra") Then
-            MsgBox "Tbot Ultra is already running. Leaving it open; close it before rebuilding the dev app output.", vbInformation, "Tbot Ultra"
+            WriteLaunchFailure progressStatusPath, "Tbot Ultra is already running.", _
+                "The existing app could not be activated. Close it before rebuilding the dev app output.", ""
+            WScript.Quit 1
+        Else
+            WriteLaunchStatus progressStatusPath, 100, "Tbot Ultra is already running."
         End If
         WScript.Quit 0
     End If
 
     If needsBuild Then
-        buildExitCode = shell.Run("""" & dotnetExe & """ build """ & projectPath & """ -c Debug -nologo -m:1 -o """ & devOutputDir & """ --disable-build-servers -p:NuGetAudit=false -p:UseSharedCompilation=false -p:BuildInParallel=false", 0, True)
+        WriteLaunchStatus progressStatusPath, 86, "Building the desktop app..."
+        buildCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File """ & checkScriptPath & """ -DotnetExe """ & dotnetExe & """ -LogPath """ & debugBuildLogPath & """ -StatusPath """ & progressStatusPath & """ -DebugBuildOnly -OutputPath """ & devOutputDir & """"
+        buildExitCode = shell.Run(buildCommand, 0, True)
         If buildExitCode <> 0 Then
-            MsgBox "Build failed. Exit code: " & buildExitCode & ". The app was not started, so you do not accidentally run an old build.", vbExclamation, "Tbot Ultra"
+            WriteLaunchFailure progressStatusPath, "Desktop build failed. The app was not started.", _
+                ReadPreflightFailure(fso, debugBuildLogPath), debugBuildLogPath
         ElseIf Not fso.FileExists(exePath) Then
-            MsgBox "Built exe not found: " & exePath, vbExclamation, "Tbot Ultra"
+            WriteLaunchFailure progressStatusPath, "Built app was not found.", exePath, debugBuildLogPath
         Else
             WriteBuildStamp fso, sourceStampPath, latestSource
+            WriteLaunchStatus progressStatusPath, 96, "Opening Tbot Ultra..."
             LaunchAndActivate shell, exePath
+            WriteLaunchStatus progressStatusPath, 100, "Tbot Ultra is ready."
         End If
     Else
+        WriteLaunchStatus progressStatusPath, 96, "Opening Tbot Ultra..."
         LaunchAndActivate shell, exePath
+        WriteLaunchStatus progressStatusPath, 100, "Tbot Ultra is ready."
     End If
 End If
+
+Sub WriteLaunchStatus(statusPath, progressValue, message)
+    On Error Resume Next
+    Set statusStream = fso.OpenTextFile(statusPath, 2, True)
+    statusStream.Write CStr(progressValue) & "|" & message
+    statusStream.Close
+End Sub
+
+Sub WriteLaunchFailure(statusPath, message, detail, logPath)
+    On Error Resume Next
+    Set statusStream = fso.OpenTextFile(statusPath, 2, True)
+    statusStream.WriteLine "-1|" & message
+    statusStream.WriteLine detail
+    If Len(logPath) > 0 Then
+        statusStream.WriteLine logPath
+    Else
+        statusStream.WriteLine "-"
+    End If
+    statusStream.Close
+End Sub
 
 Function IsAppRunning(shellObject)
     On Error Resume Next

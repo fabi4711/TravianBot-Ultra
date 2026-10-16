@@ -26,6 +26,36 @@ public sealed class DevLauncherPreflightTests
         Assert.Contains("exit $process.ExitCode", preflight);
     }
 
+    [Fact]
+    public void VbsLauncher_ShowsProgressBeforeChecksAndKeepsBuildProcessesHidden()
+    {
+        var root = FindRepositoryRoot();
+        var launcher = File.ReadAllText(Path.Combine(root, "Start_Tbot_UI.vbs"));
+        var preflight = File.ReadAllText(Path.Combine(root, "scripts", "Verify-DevLaunch.ps1"));
+        var progressWindow = File.ReadAllText(Path.Combine(root, "scripts", "Show-DevLaunchProgress.ps1"));
+
+        Assert.True(launcher.IndexOf("shell.Run progressCommand, 0, False", StringComparison.Ordinal)
+            < launcher.IndexOf("dotnetExe = ResolveDotnetExe", StringComparison.Ordinal));
+        Assert.Contains("If Not fso.FileExists(progressReadyPath) Then", launcher);
+        Assert.Contains("-StatusPath \"\"\" & progressStatusPath", launcher);
+        Assert.Contains("WriteLaunchFailure progressStatusPath", launcher);
+        Assert.DoesNotContain("MsgBox \"Local CI check failed", launcher, StringComparison.Ordinal);
+        Assert.Contains("Write-LaunchStatus $Progress", preflight);
+        Assert.Contains("-WindowStyle Hidden -Wait -PassThru", preflight);
+        Assert.Contains("Invoke-PreflightStep \"Desktop debug build\"", preflight);
+        Assert.Contains("ProgressBar x:Name=\"LaunchProgress\"", progressWindow);
+        Assert.Contains("x:Name=\"StepText\" Grid.Column=\"1\" Text=\"STARTING\"", progressWindow);
+        Assert.Contains("x:Name=\"ElapsedText\" Grid.Column=\"1\"", progressWindow);
+        Assert.Contains("$elapsedText.Text = \"Elapsed:", progressWindow);
+        Assert.Contains("Border x:Name=\"ErrorPanel\"", progressWindow);
+        Assert.Contains("Button x:Name=\"OpenLogButton\"", progressWindow);
+        Assert.Contains("Button x:Name=\"CloseButton\"", progressWindow);
+        Assert.Contains("$window.Add_ContentRendered", progressWindow);
+        Assert.Contains("$script:launchTimer = [System.Diagnostics.Stopwatch]::StartNew()", progressWindow);
+        Assert.Contains("$script:launchTimer.Elapsed", progressWindow);
+        Assert.DoesNotContain("stageStartedAt", progressWindow, StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
