@@ -172,9 +172,16 @@ public partial class MainWindow
             return;
         }
 
-        await RefreshInboxIndicatorsAsync(
-            logErrors: false,
-            cancellationToken: _loopController.AcquireSessionScopeToken());
+        var sessionToken = _loopController.AcquireSessionScopeToken();
+        try
+        {
+            await RefreshInboxIndicatorsAsync(logErrors: false, cancellationToken: sessionToken);
+        }
+        catch (OperationCanceledException) when (sessionToken.IsCancellationRequested)
+        {
+            // Timer ticks run as async void; a session stop must not escape to the dispatcher and end the app.
+            AppendLog("[inbox:verbose] background inbox refresh canceled by session stop.");
+        }
     }
 
     // Lightweight read-only check used by the ~20s background tick: only reads the
