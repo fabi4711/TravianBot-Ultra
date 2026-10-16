@@ -19,6 +19,7 @@ public partial class MainWindow
 {
     private static readonly TimeSpan VillageMembershipPreflightInterval = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan VillageMembershipVerificationRetryDelay = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan VillageMembershipTransientReadRetryDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan VillageMembershipConfirmationRefreshInterval = TimeSpan.FromMinutes(20);
     private string? _villageMembershipPreflightAccount;
     private DateTimeOffset _lastVillageMembershipPreflightAtUtc = DateTimeOffset.MinValue;
@@ -654,11 +655,15 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
+            // A page reload racing the sidebar read says nothing about membership; retry soon instead of idling all villages.
+            var retryDelay = BrowserFailureClassifier.IsTransientNavigation(ex)
+                ? VillageMembershipTransientReadRetryDelay
+                : VillageMembershipVerificationRetryDelay;
             _failedVillageMembershipSignature = "sidebar-read-failed";
-            _villageMembershipVerificationNotBeforeUtc = now + VillageMembershipVerificationRetryDelay;
+            _villageMembershipVerificationNotBeforeUtc = now + retryDelay;
             AppendLog(
                 "[village-membership] sidebar preflight failed; state-changing automation is paused "
-                + $"until {_villageMembershipVerificationNotBeforeUtc:HH:mm}: {FormatExceptionForLog(ex)}");
+                + $"until {_villageMembershipVerificationNotBeforeUtc.ToLocalTime():HH:mm:ss}: {FormatExceptionForLog(ex)}");
             return false;
         }
 

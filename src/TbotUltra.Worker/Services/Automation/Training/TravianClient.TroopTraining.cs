@@ -873,6 +873,18 @@ public sealed partial class TravianClient : ITrainingClient
                 timedWaitSeconds);
         }
 
+        if (string.Equals(candidate.Request.RunMode, "resource_percent", StringComparison.OrdinalIgnoreCase))
+        {
+            // OR semantics keep the % gate open while any checked resource stays full (e.g. a full granary), so
+            // without a cooldown the task is ready again at once and pins the loop to this village.
+            var cooldownSeconds = Math.Max(1, fallbackCooldownSeconds);
+            Notify($"[troops] resource % trigger for {candidate.Request.BuildingName}: next run in {TravianParsing.FormatDuration(cooldownSeconds)}.");
+            return new TroopTrainingAttemptOutcome(
+                true,
+                $"Build troops: queued {(useMaxShortcut ? "maximum" : amount.ToString())} {candidate.Request.TroopType} at {candidate.Request.BuildingName}. Queue={queueText}. Stock={BuildTroopTrainingResourceSummary(resourcesAfterSubmit)}. Next run in {TravianParsing.FormatDuration(cooldownSeconds)}. queue_wait_seconds={cooldownSeconds}",
+                cooldownSeconds);
+        }
+
         return new TroopTrainingAttemptOutcome(
             true,
             $"Build troops: queued {(useMaxShortcut ? "maximum" : amount.ToString())} {candidate.Request.TroopType} at {candidate.Request.BuildingName}. Queue={queueText}. Stock={BuildTroopTrainingResourceSummary(resourcesAfterSubmit)}.");
