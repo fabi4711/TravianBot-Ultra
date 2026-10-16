@@ -32,9 +32,10 @@ or the repository verification scripts rather than a plain parallel `dotnet buil
 Automated tests must run without visible windows whenever possible. WPF smoke tests that need `Loaded`,
 `ContentRendered`, or dialogs must use off-screen, non-activating windows rather than flashing UI on the desktop.
 The development VBS launcher gates changed app/test/launcher sources on a Release solution build and both CI test
-projects before opening the UI. Failed checks block new launches and show a dialog with the failing test and
-local preflight log path; an already-running app is left untouched. A passing source stamp avoids repeating
-unchanged checks on every launch.
+projects before opening the UI. Failed checks block new launches and stay in the themed progress window with
+the failing test and local log path; an already-running app is left untouched. A passing source stamp avoids repeating
+unchanged checks on every launch. The launcher opens its themed progress window before checking sources;
+build and test child processes remain hidden, and the window reports stages rather than an estimated elapsed-time percentage.
 
 Published artifacts belong under `artifacts/`, never beside source files.
 
